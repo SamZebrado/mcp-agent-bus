@@ -1,0 +1,12 @@
+[project]
+name = "mcp-agent-bus"
+version = "0.1.0"
+description = "Local MCP message bus for independent agents"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+mcp-agent-bus = "mcp_agent_bus.cli:main"
+
+[tool.setuptools]
+packages = ["mcp_agent_bus"]
