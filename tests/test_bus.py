@@ -223,6 +223,75 @@ class BusTests(unittest.TestCase):
             self.bus.append_progress(task_id, "worker", "should fail")
         self.assertIn("terminal", str(ctx.exception))
 
+    def test_send_task_rolls_back_if_event_fails(self) -> None:
+        original_event = self.bus._event
+
+        def fail_event(*args, **kwargs):
+            raise RuntimeError("event write failed")
+
+        self.bus._event = fail_event
+        try:
+            with self.assertRaises(RuntimeError):
+                self.bus.send_task("worker", "test")
+        finally:
+            self.bus._event = original_event
+
+        tasks = self.bus.list_tasks()
+        self.assertEqual(len(tasks["tasks"]), 0)
+
+    def test_claim_task_rolls_back_if_event_fails(self) -> None:
+        task = self.bus.send_task("worker", "test")
+        original_event = self.bus._event
+
+        def fail_event(*args, **kwargs):
+            raise RuntimeError("event write failed")
+
+        self.bus._event = fail_event
+        try:
+            with self.assertRaises(RuntimeError):
+                self.bus.claim_task(task["task_id"], "worker")
+        finally:
+            self.bus._event = original_event
+
+        reloaded = self.bus.get_task(task["task_id"])
+        self.assertEqual(reloaded["status"], "new")
+        self.assertIsNone(reloaded["claimed_by"])
+
+    def test_task_claimed_event_inside_transaction(self) -> None:
+        task = self.bus.send_task("worker", "test")
+        original_event = self.bus._event
+        events = []
+
+        def track_event(*args, **kwargs):
+            events.append(("inside", args, kwargs))
+
+        self.bus._event = track_event
+        try:
+            result = self.bus.claim_task(task["task_id"], "worker")
+            self.assertEqual(result["claimed_by"], "worker")
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0][0], "inside")
+        finally:
+            self.bus._event = original_event
+
+    def test_poll_for_task_event_inside_transaction(self) -> None:
+        self.bus.send_task("worker", "test")
+        original_event = self.bus._event
+        events = []
+
+        def track_event(*args, **kwargs):
+            events.append(("inside", args, kwargs))
+
+        self.bus._event = track_event
+        try:
+            result = self.bus.poll_for_task("worker")
+            self.assertEqual(result["status"], "ok")
+            self.assertIn("task", result)
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0][0], "inside")
+        finally:
+            self.bus._event = original_event
+
 
 if __name__ == "__main__":
     unittest.main()

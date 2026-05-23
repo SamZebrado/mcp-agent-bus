@@ -163,6 +163,11 @@ class AgentBus:
         return task
 
     def _expire_leases(self) -> int:
+        """Expire stale leases.
+
+        Caller must hold _write_tx(), because this method updates tasks
+        and appends lease_expired events.
+        """
         ts = now_s()
         rows = self.conn.execute(
             """
@@ -274,7 +279,7 @@ class AgentBus:
                 """,
                 (agent_name, lease_until, ts, task_id),
             )
-        self._event("task_claimed", task_id=task_id, agent_name=agent_name, lease_until=lease_until)
+            self._event("task_claimed", task_id=task_id, agent_name=agent_name, lease_until=lease_until)
         return self.get_task(task_id)
 
     def wait_for_task(self, agent_name: str, max_wait_s: int | None = None, lease_s: int | None = None) -> dict[str, Any]:
@@ -304,8 +309,8 @@ class AgentBus:
                         """,
                         (agent_name, lease_until, now_s(), task_id),
                     )
+                    self._event("task_claimed", task_id=task_id, agent_name=agent_name)
             if task_id:
-                self._event("task_claimed", task_id=task_id, agent_name=agent_name)
                 return {"status": "ok", "task": self.get_task(task_id)}
             if now_s() >= deadline:
                 return {"status": "timeout", "task": None}
@@ -456,8 +461,8 @@ class AgentBus:
                     """,
                     (agent_name, lease_until, now_s(), task_id),
                 )
+                self._event("task_claimed", task_id=task_id, agent_name=agent_name)
         if task_id:
-            self._event("task_claimed", task_id=task_id, agent_name=agent_name)
             return {"status": "ok", "task": self.get_task(task_id)}
         return {"status": "empty", "task": None}
 
@@ -519,6 +524,16 @@ class AgentBus:
                 }
 
             before_bytes = path.stat().st_size
+
+            if min_bytes is not None and before_bytes < min_bytes:
+                return {
+                    "status": "skipped",
+                    "reason": "below_min_bytes",
+                    "event_log": str(path),
+                    "before_bytes": before_bytes,
+                    "after_bytes": before_bytes,
+                    "archived_path": None,
+                }
 
             total_lines = 0
             with path.open("r", encoding="utf-8") as src:
