@@ -80,6 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("list-tasks")
     p.add_argument("--filter")
 
+    p = sub.add_parser("cleanup-event-log")
+    p.add_argument("--keep-last-lines", type=int, default=10000)
+    p.add_argument("--no-archive", action="store_true")
+    p.add_argument("--min-bytes", type=int)
+
     return parser
 
 
@@ -124,6 +129,12 @@ def main(argv: list[str] | None = None) -> int:
             result = bus.get_task(args.task_id)
         elif args.command == "list-tasks":
             result = bus.list_tasks(parse_json(args.filter))
+        elif args.command == "cleanup-event-log":
+            result = bus.cleanup_event_log(
+                keep_last_lines=args.keep_last_lines,
+                archive=not args.no_archive,
+                min_bytes=args.min_bytes,
+            )
         else:
             raise AssertionError(args.command)
         print_json(result)

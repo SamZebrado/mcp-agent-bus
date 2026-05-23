@@ -5,8 +5,9 @@ import os
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 TASK_STATES = {
     "new",
@@ -100,6 +101,20 @@ class AgentBus:
             """
         )
 
+    @contextmanager
+    def _write_tx(self) -> Iterator[None]:
+        """Run a write transaction with an immediate SQLite write lock."""
+        if self.conn.in_transaction:
+            yield
+            return
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
     def _event(self, event_type: str, task_id: str | None = None, agent_name: str | None = None, **payload: Any) -> None:
         event = {
             "event_id": str(uuid.uuid4()),
@@ -177,17 +192,18 @@ class AgentBus:
         if not agent_name:
             raise BusError("agent_name is required")
         ts = now_s()
-        self.conn.execute(
-            """
-            INSERT INTO agents(agent_name, role, registered_at, last_seen_at)
-            VALUES(?, ?, ?, ?)
-            ON CONFLICT(agent_name) DO UPDATE SET
-                role = COALESCE(excluded.role, agents.role),
-                last_seen_at = excluded.last_seen_at
-            """,
-            (agent_name, role, ts, ts),
-        )
-        self._event("agent_registered", agent_name=agent_name, role=role)
+        with self._write_tx():
+            self.conn.execute(
+                """
+                INSERT INTO agents(agent_name, role, registered_at, last_seen_at)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(agent_name) DO UPDATE SET
+                    role = COALESCE(excluded.role, agents.role),
+                    last_seen_at = excluded.last_seen_at
+                """,
+                (agent_name, role, ts, ts),
+            )
+            self._event("agent_registered", agent_name=agent_name, role=role)
         return {"agent_name": agent_name, "role": role, "registered_at": ts}
 
     def send_task(
@@ -205,32 +221,34 @@ class AgentBus:
             raise BusError("body is required")
         task_id = f"task_{uuid.uuid4().hex[:16]}"
         ts = now_s()
-        self.conn.execute(
-            """
-            INSERT INTO tasks(
-                task_id, to_agent, from_agent, body, acceptance_criteria, priority,
-                timeout_s, status, created_at, updated_at
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)
-            """,
-            (
-                task_id,
-                to,
-                from_agent,
-                body,
-                self._json(acceptance_criteria),
-                int(priority or 0),
-                timeout_s,
-                ts,
-                ts,
-            ),
-        )
-        self._event(
-            "task_sent",
-            task_id=task_id,
-            agent_name=from_agent,
-            to=to,
-            priority=int(priority or 0),
-        )
+        priority_value = int(priority or 0)
+        with self._write_tx():
+            self.conn.execute(
+                """
+                INSERT INTO tasks(
+                    task_id, to_agent, from_agent, body, acceptance_criteria, priority,
+                    timeout_s, status, created_at, updated_at
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)
+                """,
+                (
+                    task_id,
+                    to,
+                    from_agent,
+                    body,
+                    self._json(acceptance_criteria),
+                    priority_value,
+                    timeout_s,
+                    ts,
+                    ts,
+                ),
+            )
+            self._event(
+                "task_sent",
+                task_id=task_id,
+                agent_name=from_agent,
+                to=to,
+                priority=priority_value,
+            )
         return self.get_task(task_id)
 
     def claim_task(self, task_id: str, agent_name: str, lease_s: int | None = None) -> dict[str, Any]:
@@ -239,8 +257,7 @@ class AgentBus:
         lease = int(lease_s or 300)
         ts = now_s()
         lease_until = ts + lease
-        self.conn.execute("BEGIN IMMEDIATE")
-        try:
+        with self._write_tx():
             self._expire_leases()
             row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
             if row is None:
@@ -257,19 +274,14 @@ class AgentBus:
                 """,
                 (agent_name, lease_until, ts, task_id),
             )
-            self.conn.execute("COMMIT")
-        except Exception:
-            self.conn.execute("ROLLBACK")
-            raise
         self._event("task_claimed", task_id=task_id, agent_name=agent_name, lease_until=lease_until)
         return self.get_task(task_id)
 
     def wait_for_task(self, agent_name: str, max_wait_s: int | None = None, lease_s: int | None = None) -> dict[str, Any]:
         deadline = now_s() + int(max_wait_s if max_wait_s is not None else 30)
         while True:
-            self.conn.execute("BEGIN IMMEDIATE")
             task_id = None
-            try:
+            with self._write_tx():
                 self._expire_leases()
                 row = self.conn.execute(
                     """
@@ -292,10 +304,6 @@ class AgentBus:
                         """,
                         (agent_name, lease_until, now_s(), task_id),
                     )
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
             if task_id:
                 self._event("task_claimed", task_id=task_id, agent_name=agent_name)
                 return {"status": "ok", "task": self.get_task(task_id)}
@@ -307,23 +315,25 @@ class AgentBus:
         if not message:
             raise BusError("message is required")
         ts = now_s()
-        row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
-        if row is None:
-            raise BusError(f"task not found: {task_id}")
-        if row["claimed_by"] != agent_name:
-            raise BusError(f"task {task_id} is claimed by {row['claimed_by']}, not {agent_name}")
-        if row["status"] in TERMINAL_STATES:
-            raise BusError(f"task {task_id} is terminal: {row['status']}")
-        self.conn.execute(
-            "INSERT INTO progress(task_id, agent_name, message, evidence, created_at) VALUES(?, ?, ?, ?, ?)",
-            (task_id, agent_name, message, self._json(evidence), ts),
-        )
-        next_status = "running" if row["status"] == "claimed" else row["status"]
-        self.conn.execute(
-            "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
-            (next_status, ts, task_id),
-        )
-        self._event("progress_appended", task_id=task_id, agent_name=agent_name, message=message, evidence=evidence)
+        with self._write_tx():
+            self._expire_leases()
+            row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise BusError(f"task not found: {task_id}")
+            if row["claimed_by"] != agent_name:
+                raise BusError(f"task {task_id} is claimed by {row['claimed_by']}, not {agent_name}")
+            if row["status"] in TERMINAL_STATES:
+                raise BusError(f"task {task_id} is terminal: {row['status']}")
+            self.conn.execute(
+                "INSERT INTO progress(task_id, agent_name, message, evidence, created_at) VALUES(?, ?, ?, ?, ?)",
+                (task_id, agent_name, message, self._json(evidence), ts),
+            )
+            next_status = "running" if row["status"] == "claimed" else row["status"]
+            self.conn.execute(
+                "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
+                (next_status, ts, task_id),
+            )
+            self._event("progress_appended", task_id=task_id, agent_name=agent_name, message=message, evidence=evidence)
         return self.get_task(task_id)
 
     def finish_task(
@@ -338,47 +348,52 @@ class AgentBus:
     ) -> dict[str, Any]:
         if status not in {"blocked", "done", "failed", "rejected", "cancelled", "expired"}:
             raise BusError("finish status must be one of blocked, done, failed, rejected, cancelled, expired")
-        row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
-        if row is None:
-            raise BusError(f"task not found: {task_id}")
-        if row["claimed_by"] != agent_name:
-            raise BusError(f"task {task_id} is claimed by {row['claimed_by']}, not {agent_name}")
         ts = now_s()
         finished_at = ts if status in TERMINAL_STATES else None
-        self.conn.execute(
-            """
-            UPDATE tasks
-            SET status = ?, summary = ?, changed_files = ?, evidence = ?, error_message = ?,
-                lease_until = NULL, updated_at = ?, finished_at = COALESCE(?, finished_at)
-            WHERE task_id = ?
-            """,
-            (
-                status,
-                summary,
-                self._json(changed_files),
-                self._json(evidence),
-                error_message,
-                ts,
-                finished_at,
-                task_id,
-            ),
-        )
-        self._event(
-            "task_finished",
-            task_id=task_id,
-            agent_name=agent_name,
-            status=status,
-            summary=summary,
-            changed_files=changed_files,
-            evidence=evidence,
-            error_message=error_message,
-        )
+        with self._write_tx():
+            self._expire_leases()
+            row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise BusError(f"task not found: {task_id}")
+            if row["claimed_by"] != agent_name:
+                raise BusError(f"task {task_id} is claimed by {row['claimed_by']}, not {agent_name}")
+            if row["status"] in TERMINAL_STATES:
+                raise BusError(f"task {task_id} is terminal: {row['status']}")
+            self.conn.execute(
+                """
+                UPDATE tasks
+                SET status = ?, summary = ?, changed_files = ?, evidence = ?, error_message = ?,
+                    lease_until = NULL, updated_at = ?, finished_at = COALESCE(?, finished_at)
+                WHERE task_id = ?
+                """,
+                (
+                    status,
+                    summary,
+                    self._json(changed_files),
+                    self._json(evidence),
+                    error_message,
+                    ts,
+                    finished_at,
+                    task_id,
+                ),
+            )
+            self._event(
+                "task_finished",
+                task_id=task_id,
+                agent_name=agent_name,
+                status=status,
+                summary=summary,
+                changed_files=changed_files,
+                evidence=evidence,
+                error_message=error_message,
+            )
         return self.get_task(task_id)
 
     def wait_for_result(self, task_id: str, max_wait_s: int | None = None) -> dict[str, Any]:
         deadline = now_s() + int(max_wait_s if max_wait_s is not None else 30)
         while True:
-            self._expire_leases()
+            with self._write_tx():
+                self._expire_leases()
             task = self.get_task(task_id)
             if task is None:
                 raise BusError(f"task not found: {task_id}")
@@ -393,7 +408,8 @@ class AgentBus:
         return self._row_to_task(row)
 
     def list_tasks(self, filter: dict[str, Any] | None = None) -> dict[str, Any]:
-        self._expire_leases()
+        with self._write_tx():
+            self._expire_leases()
         filter = filter or {}
         clauses = []
         args: list[Any] = []
@@ -416,9 +432,8 @@ class AgentBus:
         return {"tasks": [self._row_to_task(row, include_progress=False) for row in rows]}
 
     def poll_for_task(self, agent_name: str, lease_s: int | None = None) -> dict[str, Any]:
-        self.conn.execute("BEGIN IMMEDIATE")
         task_id = None
-        try:
+        with self._write_tx():
             self._expire_leases()
             row = self.conn.execute(
                 """
@@ -441,20 +456,136 @@ class AgentBus:
                     """,
                     (agent_name, lease_until, now_s(), task_id),
                 )
-            self.conn.execute("COMMIT")
-        except Exception:
-            self.conn.execute("ROLLBACK")
-            raise
         if task_id:
             self._event("task_claimed", task_id=task_id, agent_name=agent_name)
             return {"status": "ok", "task": self.get_task(task_id)}
         return {"status": "empty", "task": None}
 
     def poll_for_result(self, task_id: str) -> dict[str, Any]:
-        self._expire_leases()
+        with self._write_tx():
+            self._expire_leases()
         task = self.get_task(task_id)
         if task is None:
             raise BusError(f"task not found: {task_id}")
         if task["status"] in TERMINAL_STATES:
             return {"status": "ok", "task": task}
         return {"status": "pending", "task": task}
+
+    def cleanup_event_log(
+        self,
+        keep_last_lines: int = 10000,
+        archive: bool = True,
+        min_bytes: int | None = None,
+    ) -> dict[str, Any]:
+        """Archive old event-log lines and keep only the newest tail in events.jsonl.
+
+        This preserves audit history by default:
+        - old lines are moved to data/event_archives/*.jsonl
+        - events.jsonl keeps the newest keep_last_lines lines
+        - a cleanup event is appended after rotation
+        """
+        if keep_last_lines < 0:
+            raise BusError("keep_last_lines must be >= 0")
+
+        path = self.event_log_path
+        if not path.exists():
+            return {
+                "status": "empty",
+                "event_log": str(path),
+                "before_bytes": 0,
+                "after_bytes": 0,
+                "archived_path": None,
+            }
+
+        before_bytes = path.stat().st_size
+        if min_bytes is not None and before_bytes < min_bytes:
+            return {
+                "status": "skipped",
+                "reason": "below_min_bytes",
+                "event_log": str(path),
+                "before_bytes": before_bytes,
+                "after_bytes": before_bytes,
+                "archived_path": None,
+            }
+
+        with self._write_tx():
+            if not path.exists():
+                return {
+                    "status": "empty",
+                    "event_log": str(path),
+                    "before_bytes": 0,
+                    "after_bytes": 0,
+                    "archived_path": None,
+                }
+
+            before_bytes = path.stat().st_size
+
+            total_lines = 0
+            with path.open("r", encoding="utf-8") as src:
+                for _ in src:
+                    total_lines += 1
+
+            if total_lines <= keep_last_lines:
+                return {
+                    "status": "skipped",
+                    "reason": "line_count_within_limit",
+                    "event_log": str(path),
+                    "before_bytes": before_bytes,
+                    "after_bytes": before_bytes,
+                    "total_lines": total_lines,
+                    "kept_lines": total_lines,
+                    "archived_lines": 0,
+                    "archived_path": None,
+                }
+
+            archive_dir = self.data_dir / "event_archives"
+            archived_path = None
+            if archive:
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                archived_path = archive_dir / f"events-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.jsonl"
+
+            cutoff = max(0, total_lines - keep_last_lines)
+            tmp_path = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex[:8]}")
+
+            archived_lines = 0
+            kept_lines = 0
+
+            with path.open("r", encoding="utf-8") as src, tmp_path.open("w", encoding="utf-8") as tmp:
+                archive_fh = archived_path.open("w", encoding="utf-8") if archived_path else None
+                try:
+                    for line_no, line in enumerate(src):
+                        if line_no < cutoff:
+                            archived_lines += 1
+                            if archive_fh is not None:
+                                archive_fh.write(line)
+                        else:
+                            kept_lines += 1
+                            tmp.write(line)
+                finally:
+                    if archive_fh is not None:
+                        archive_fh.close()
+
+            os.replace(tmp_path, path)
+
+            self._event(
+                "event_log_cleaned",
+                kept_lines=kept_lines,
+                archived_lines=archived_lines,
+                archived_path=str(archived_path) if archived_path else None,
+                before_bytes=before_bytes,
+                keep_last_lines=keep_last_lines,
+                archive=archive,
+            )
+
+            after_bytes = path.stat().st_size
+
+        return {
+            "status": "ok",
+            "event_log": str(path),
+            "before_bytes": before_bytes,
+            "after_bytes": after_bytes,
+            "total_lines": total_lines,
+            "kept_lines": kept_lines,
+            "archived_lines": archived_lines,
+            "archived_path": str(archived_path) if archived_path else None,
+        }

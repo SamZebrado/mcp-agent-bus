@@ -74,6 +74,14 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "get_task": schema({"task_id": {"type": "string"}}, ["task_id"]),
     "list_tasks": schema({"filter": {"type": "object"}}, []),
+    "cleanup_event_log": schema(
+        {
+            "keep_last_lines": {"type": "integer"},
+            "archive": {"type": "boolean"},
+            "min_bytes": {"type": "integer"},
+        },
+        [],
+    ),
 }
 
 
@@ -150,6 +158,7 @@ def tool_description(name: str) -> str:
         "poll_for_result": "Non-blocking check for a task's result; return immediately.",
         "get_task": "Read a task including progress entries.",
         "list_tasks": "List tasks with optional status/to/limit filter.",
+        "cleanup_event_log": "Archive old event-log lines and keep only the newest tail in events.jsonl.",
     }
     return descriptions[name]
 

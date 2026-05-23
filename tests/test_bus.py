@@ -162,6 +162,67 @@ class BusTests(unittest.TestCase):
                         events.append(json.loads(line))
         return events
 
+    def test_cleanup_event_log_archives_old_lines(self) -> None:
+        event_log = Path(self.tmp.name) / "events.jsonl"
+        event_log.write_text(
+            "".join(f'{{"n": {idx}}}\n' for idx in range(20)),
+            encoding="utf-8",
+        )
+
+        result = self.bus.cleanup_event_log(keep_last_lines=5, archive=True)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["kept_lines"], 5)
+        self.assertEqual(result["archived_lines"], 15)
+        self.assertIsNotNone(result["archived_path"])
+        self.assertEqual(len(event_log.read_text(encoding="utf-8").splitlines()), 6)
+
+    def test_cleanup_event_log_skips_within_limit(self) -> None:
+        event_log = Path(self.tmp.name) / "events.jsonl"
+        event_log.write_text(
+            "".join(f'{{"n": {idx}}}\n' for idx in range(5)),
+            encoding="utf-8",
+        )
+
+        result = self.bus.cleanup_event_log(keep_last_lines=10)
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["reason"], "line_count_within_limit")
+
+    def test_cleanup_event_log_no_archive(self) -> None:
+        event_log = Path(self.tmp.name) / "events.jsonl"
+        event_log.write_text(
+            "".join(f'{{"n": {idx}}}\n' for idx in range(20)),
+            encoding="utf-8",
+        )
+
+        result = self.bus.cleanup_event_log(keep_last_lines=5, archive=False)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["archived_lines"], 15)
+        self.assertIsNone(result["archived_path"])
+        self.assertEqual(len(event_log.read_text(encoding="utf-8").splitlines()), 6)
+
+    def test_finish_task_rejects_terminal_overwrite(self) -> None:
+        task = self.bus.send_task("worker", "test")
+        task_id = task["task_id"]
+        self.bus.claim_task(task_id, "worker")
+        self.bus.finish_task(task_id, "worker", "done", "done once")
+
+        with self.assertRaises(BusError) as ctx:
+            self.bus.finish_task(task_id, "worker", "failed", "overwrite")
+        self.assertIn("terminal", str(ctx.exception))
+
+    def test_append_progress_rejects_terminal_task(self) -> None:
+        task = self.bus.send_task("worker", "test")
+        task_id = task["task_id"]
+        self.bus.claim_task(task_id, "worker")
+        self.bus.finish_task(task_id, "worker", "done", "done once")
+
+        with self.assertRaises(BusError) as ctx:
+            self.bus.append_progress(task_id, "worker", "should fail")
+        self.assertIn("terminal", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
