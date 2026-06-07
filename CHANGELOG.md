@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added `codex_bus_sync` as a compact workflow tool for Codex-oriented MCP usage
+- Added MCP initialize instructions recommending `codex_bus_sync` to reduce redundant MCP round trips and context overhead
+- Added tests covering compact workflow send/claim/finish/watch behavior and compact payload shape
+- Added README / README_en compact mode documentation and minimal Codex MCP configuration example
+
 ## v0.1.0 - Initial MVP
 
 - Added local MCP Agent Task Bus

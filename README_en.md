@@ -45,6 +45,39 @@ The MCP server exposes these tools:
 - `poll_for_result(task_id)`: Non-blocking check for task's result; returns status="ok" if terminal, status="pending" otherwise
 - `get_task(task_id)`: Get full task including progress
 - `list_tasks(filter?)`: List tasks with optional to/status/limit filters
+- `codex_bus_sync(agent_name, role?, send?, claim?, finish?, watch?, list?, compact=true)`: Compact workflow for Codex; auto-registers the agent and combines common bus actions
+
+## Codex compact mode
+
+`codex_bus_sync` is intended to reduce redundant MCP round trips, reduce context overhead, and provide a compact workflow for Codex.
+
+Key points:
+- All existing atomic tools remain available for SOLO / TRAE compatibility
+- `codex_bus_sync` is an additive compact entry point, not a replacement
+- The call auto-runs `register_agent(agent_name, role?)`
+- `compact=true` returns short task shapes and omits full progress / large evidence payloads
+
+Minimal Codex MCP config:
+
+```json
+{
+  "mcpServers": {
+    "agent-bus-codex": {
+      "command": "python3",
+      "args": ["-m", "mcp_agent_bus.server"],
+      "env": {
+        "PYTHONPATH": "/path/to/mcp-agent-bus",
+        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
+      }
+    }
+  }
+}
+```
+
+Recommended usage:
+- Prefer `codex_bus_sync` for register + send + claim + finish + watch + list
+- Avoid manual polling loops where possible
+- Use atomic tools only when you truly need full detail
 
 ## Blocking vs Polling Modes
 

@@ -47,6 +47,74 @@ MCP server 暴露以下工具：
 - `poll_for_result(task_id)`：非阻塞检查任务结果；终端状态返回 status="ok"，否则 status="pending"
 - `get_task(task_id)`：获取完整任务，包括进度
 - `list_tasks(filter?)`：列出任务，支持可选的 to/status/limit 过滤
+- `codex_bus_sync(agent_name, role?, send?, claim?, finish?, watch?, list?, compact=true)`：Codex 紧凑模式组合调用，自动 register，并合并常见 bus 流程
+
+## Codex compact mode
+
+为了减少 Codex 在 MCP host 中的冗余 MCP round trips、降低上下文开销，并提供更紧凑的 workflow，新增了 `codex_bus_sync`。
+
+设计原则：
+- 保留全部原子工具，SOLO / TRAE 继续按现有方式使用
+- `codex_bus_sync` 仅作为 Codex 的紧凑入口，不替代原子工具
+- 调用时会自动执行 `register_agent(agent_name, role?)`
+- `compact=true` 时返回压缩结果，省略完整 `progress` 和大段 `evidence`
+
+推荐用法：
+- planner 一次调用里同时 `register + send`
+- worker 一次调用里同时 `register + claim`
+- worker 一次调用里同时 `register + finish + watch`
+- Codex 读取结果时优先 `watch` / `list`，避免自己写轮询循环
+
+参数摘要：
+- `agent_name`：必填，本地 agent 身份
+- `role`：可选，注册时写入角色
+- `send[]`：可选，元素结构与 `send_task` 对应
+- `claim`：可选，支持 `enabled` / `lease_s` / `limit`
+- `finish[]`：可选，元素结构与 `finish_task` 对应；默认使用当前 `agent_name`
+- `watch[]`：可选，要检查结果的 `task_id` 数组
+- `list`：可选，对应 `list_tasks(filter)`
+- `compact`：默认 `true`
+
+返回特点（`compact=true`）：
+- 任务仅返回短字段：`task_id` / `status` / `summary` / `body`
+- `watch` 返回 `status`（`pending` 或 `ok`）以及压缩版 task
+- `list` 返回压缩版 task 数组
+
+最小 Codex MCP 配置示例：
+
+```json
+{
+  "mcpServers": {
+    "agent-bus-codex": {
+      "command": "python3",
+      "args": ["-m", "mcp_agent_bus.server"],
+      "env": {
+        "PYTHONPATH": "/path/to/mcp-agent-bus",
+        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
+      }
+    }
+  }
+}
+```
+
+说明：
+- 该 server 仍会暴露全部工具；对 Codex 的推荐使用方式是优先调用 `codex_bus_sync`
+- 如果 host 支持工具白名单，也可以只向 Codex 暴露 `codex_bus_sync`，以进一步减少无关工具选择
+
+最小请求示例：
+
+```json
+{
+  "agent_name": "planner-main",
+  "send": [
+    {
+      "to": "worker-docs",
+      "body": "写一份 README 草稿"
+    }
+  ],
+  "compact": true
+}
+```
 
 ## 阻塞 vs 轮询模式
 
