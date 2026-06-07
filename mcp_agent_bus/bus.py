@@ -162,6 +162,33 @@ class AgentBus:
             ]
         return task
 
+    def _short_text(self, value: Any, limit: int = 240) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 1)] + "…"
+
+    def _compact_task(self, task: dict[str, Any] | None) -> dict[str, Any] | None:
+        if task is None:
+            return None
+        return {
+            "task_id": task.get("task_id"),
+            "status": task.get("status"),
+            "summary": self._short_text(task.get("summary")),
+            "body": self._short_text(task.get("body")),
+        }
+
+    def _compact_task_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        compact = {"status": result.get("status")}
+        if "task" in result:
+            compact["task"] = self._compact_task(result.get("task"))
+        return compact
+
+    def _compact_task_list(self, result: dict[str, Any]) -> dict[str, Any]:
+        return {"tasks": [self._compact_task(task) for task in result.get("tasks", [])]}
+
     def _expire_leases(self) -> int:
         """Expire stale leases.
 
@@ -210,6 +237,80 @@ class AgentBus:
             )
             self._event("agent_registered", agent_name=agent_name, role=role)
         return {"agent_name": agent_name, "role": role, "registered_at": ts}
+
+    def codex_bus_sync(
+        self,
+        agent_name: str,
+        role: str | None = None,
+        send: list[dict[str, Any]] | None = None,
+        claim: dict[str, Any] | None = None,
+        finish: list[dict[str, Any]] | None = None,
+        watch: list[str] | None = None,
+        list: dict[str, Any] | None = None,
+        compact: bool = True,
+    ) -> dict[str, Any]:
+        if not agent_name:
+            raise BusError("agent_name is required")
+
+        send = send or []
+        finish = finish or []
+        watch = watch or []
+        claim = claim or {}
+
+        result: dict[str, Any] = {
+            "agent": self.register_agent(agent_name=agent_name, role=role),
+            "send": [],
+            "claim": [],
+            "finish": [],
+            "watch": [],
+            "list": None,
+        }
+
+        for item in send:
+            payload = dict(item or {})
+            payload.setdefault("from_agent", agent_name)
+            sent = self.send_task(**payload)
+            result["send"].append(self._compact_task(sent) if compact else sent)
+
+        if claim.get("enabled"):
+            lease_s = claim.get("lease_s")
+            limit = max(1, int(claim.get("limit", 1) or 1))
+            for _ in range(limit):
+                claimed = self.poll_for_task(agent_name=agent_name, lease_s=lease_s)
+                result["claim"].append(self._compact_task_result(claimed) if compact else claimed)
+                if claimed.get("status") != "ok":
+                    break
+
+        for item in finish:
+            payload = dict(item or {})
+            payload.setdefault("agent_name", agent_name)
+            finished = self.finish_task(**payload)
+            result["finish"].append(self._compact_task(finished) if compact else finished)
+
+        for task_id in watch:
+            watched = self.poll_for_result(task_id)
+            if compact:
+                result["watch"].append(
+                    {
+                        "task_id": task_id,
+                        "status": watched.get("status"),
+                        "task": self._compact_task(watched.get("task")),
+                    }
+                )
+            else:
+                result["watch"].append(watched)
+
+        if list is not None:
+            listed = self.list_tasks(list)
+            result["list"] = self._compact_task_list(listed) if compact else listed
+
+        if compact:
+            result["agent"] = {
+                "agent_name": result["agent"].get("agent_name"),
+                "role": result["agent"].get("role"),
+            }
+        result["compact"] = compact
+        return result
 
     def send_task(
         self,

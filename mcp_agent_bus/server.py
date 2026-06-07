@@ -74,6 +74,58 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "get_task": schema({"task_id": {"type": "string"}}, ["task_id"]),
     "list_tasks": schema({"filter": {"type": "object"}}, []),
+    "codex_bus_sync": schema(
+        {
+            "agent_name": {"type": "string"},
+            "role": {"type": "string"},
+            "send": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "to": {"type": "string"},
+                        "body": {"type": "string"},
+                        "acceptance_criteria": {},
+                        "priority": {"type": "integer"},
+                        "timeout_s": {"type": "integer"},
+                        "from_agent": {"type": "string"},
+                    },
+                    "required": ["to", "body"],
+                },
+            },
+            "claim": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "lease_s": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                },
+            },
+            "finish": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string"},
+                        "agent_name": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["blocked", "done", "failed", "rejected", "cancelled", "expired"],
+                        },
+                        "summary": {"type": "string"},
+                        "changed_files": {},
+                        "evidence": {},
+                        "error_message": {"type": "string"},
+                    },
+                    "required": ["task_id", "status", "summary"],
+                },
+            },
+            "watch": {"type": "array", "items": {"type": "string"}},
+            "list": {"type": "object"},
+            "compact": {"type": "boolean"},
+        },
+        ["agent_name"],
+    ),
     "cleanup_event_log": schema(
         {
             "keep_last_lines": {"type": "integer"},
@@ -101,6 +153,11 @@ class McpServer:
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "mcp-agent-bus", "version": "0.1.0"},
+                    "instructions": (
+                        "For Codex compact mode, prefer codex_bus_sync for the common register/send/claim/finish/watch/list "
+                        "flow. Avoid manual polling loops and avoid frequent append_progress unless a durable human-auditable "
+                        "checkpoint is truly needed."
+                    ),
                 }
                 return {"jsonrpc": "2.0", "id": req_id, "result": result}
             if method == "notifications/initialized":
@@ -158,6 +215,9 @@ def tool_description(name: str) -> str:
         "poll_for_result": "Non-blocking check for a task's result; return immediately.",
         "get_task": "Read a task including progress entries.",
         "list_tasks": "List tasks with optional status/to/limit filter.",
+        "codex_bus_sync": (
+            "Codex compact mode: auto-register agent and combine send, claim, finish, watch, and list into one call."
+        ),
         "cleanup_event_log": "Archive old event-log lines and keep only the newest tail in events.jsonl.",
     }
     return descriptions[name]

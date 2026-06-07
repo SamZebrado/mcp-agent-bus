@@ -151,6 +151,87 @@ class BusTests(unittest.TestCase):
         self.assertIsNotNone(result["task"])
         self.assertEqual(result["task"]["status"], "done")
 
+    def test_codex_sync_can_register_and_send_task(self) -> None:
+        result = self.bus.codex_bus_sync(
+            agent_name="planner",
+            role="planner",
+            send=[{"to": "worker", "body": "draft README", "priority": 3}],
+        )
+        self.assertTrue(result["compact"])
+        self.assertEqual(result["agent"]["agent_name"], "planner")
+        self.assertEqual(len(result["send"]), 1)
+        self.assertEqual(result["send"][0]["status"], "new")
+        self.assertEqual(result["send"][0]["body"], "draft README")
+
+    def test_codex_sync_can_claim_one_task(self) -> None:
+        self.bus.send_task("worker", "claim me")
+        result = self.bus.codex_bus_sync(
+            agent_name="worker",
+            claim={"enabled": True, "lease_s": 30, "limit": 1},
+        )
+        self.assertEqual(len(result["claim"]), 1)
+        self.assertEqual(result["claim"][0]["status"], "ok")
+        self.assertEqual(result["claim"][0]["task"]["status"], "claimed")
+        self.assertEqual(result["claim"][0]["task"]["body"], "claim me")
+
+    def test_codex_sync_can_finish_task(self) -> None:
+        task = self.bus.send_task("worker", "finish me")
+        self.bus.claim_task(task["task_id"], "worker")
+        result = self.bus.codex_bus_sync(
+            agent_name="worker",
+            finish=[{"task_id": task["task_id"], "status": "done", "summary": "finished"}],
+        )
+        self.assertEqual(len(result["finish"]), 1)
+        self.assertEqual(result["finish"][0]["task_id"], task["task_id"])
+        self.assertEqual(result["finish"][0]["status"], "done")
+        self.assertEqual(result["finish"][0]["summary"], "finished")
+
+    def test_codex_sync_can_watch_pending_and_done_task(self) -> None:
+        pending_task = self.bus.send_task("worker", "pending task")
+        done_task = self.bus.send_task("worker", "done task")
+        self.bus.claim_task(done_task["task_id"], "worker")
+        self.bus.finish_task(done_task["task_id"], "worker", "done", "all set")
+
+        result = self.bus.codex_bus_sync(
+            agent_name="watcher",
+            watch=[pending_task["task_id"], done_task["task_id"]],
+        )
+
+        self.assertEqual(len(result["watch"]), 2)
+        statuses = {item["task_id"]: item["status"] for item in result["watch"]}
+        self.assertEqual(statuses[pending_task["task_id"]], "pending")
+        self.assertEqual(statuses[done_task["task_id"]], "ok")
+
+    def test_codex_sync_compact_omits_large_progress_and_evidence(self) -> None:
+        task = self.bus.send_task("worker", "body text")
+        self.bus.claim_task(task["task_id"], "worker")
+        self.bus.append_progress(task["task_id"], "worker", "step 1", evidence={"log": "x" * 2000})
+        self.bus.finish_task(
+            task["task_id"],
+            "worker",
+            "done",
+            "summary text",
+            evidence={"blob": "y" * 2000},
+        )
+
+        compact = self.bus.codex_bus_sync(
+            agent_name="watcher",
+            watch=[task["task_id"]],
+            list={"to": "worker"},
+            compact=True,
+        )
+        watch_task = compact["watch"][0]["task"]
+        self.assertEqual(set(watch_task.keys()), {"task_id", "status", "summary", "body"})
+        self.assertEqual(set(compact["list"]["tasks"][0].keys()), {"task_id", "status", "summary", "body"})
+
+        full = self.bus.codex_bus_sync(
+            agent_name="watcher",
+            watch=[task["task_id"]],
+            compact=False,
+        )
+        self.assertIn("progress", full["watch"][0]["task"])
+        self.assertIn("evidence", full["watch"][0]["task"])
+
     def _read_events(self) -> list[dict]:
         event_log_path = Path(self.tmp.name) / "events.jsonl"
         events = []

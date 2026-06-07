@@ -28,6 +28,7 @@ class McpStdioTests(unittest.TestCase):
                 proc.stdin.flush()
                 init = json.loads(proc.stdout.readline())
                 self.assertEqual(init["result"]["serverInfo"]["name"], "mcp-agent-bus")
+                self.assertIn("codex_bus_sync", init["result"]["instructions"])
 
                 proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n")
                 proc.stdin.flush()
@@ -35,6 +36,7 @@ class McpStdioTests(unittest.TestCase):
                 names = {tool["name"] for tool in listed["result"]["tools"]}
                 self.assertIn("send_task", names)
                 self.assertIn("wait_for_result", names)
+                self.assertIn("codex_bus_sync", names)
 
                 call = {
                     "jsonrpc": "2.0",
@@ -47,6 +49,25 @@ class McpStdioTests(unittest.TestCase):
                 result = json.loads(proc.stdout.readline())
                 payload = json.loads(result["result"]["content"][0]["text"])
                 self.assertEqual(payload["agent_name"], "worker")
+
+                sync = {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "codex_bus_sync",
+                        "arguments": {
+                            "agent_name": "planner",
+                            "send": [{"to": "worker", "body": "compact task"}],
+                        },
+                    },
+                }
+                proc.stdin.write(json.dumps(sync) + "\n")
+                proc.stdin.flush()
+                sync_result = json.loads(proc.stdout.readline())
+                sync_payload = json.loads(sync_result["result"]["content"][0]["text"])
+                self.assertTrue(sync_payload["compact"])
+                self.assertEqual(sync_payload["send"][0]["status"], "new")
             finally:
                 proc.terminate()
                 proc.wait(timeout=5)
