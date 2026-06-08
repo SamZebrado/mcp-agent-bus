@@ -7,6 +7,7 @@ dependencies = []
 
 [project.scripts]
 mcp-agent-bus = "mcp_agent_bus.cli:main"
+mcp-agent-bus-dashboard = "mcp_agent_bus.dashboard:main"
 
 [tool.setuptools]
 packages = ["mcp_agent_bus"]

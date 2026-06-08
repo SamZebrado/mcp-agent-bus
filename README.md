@@ -82,6 +82,8 @@ MCP server 暴露以下工具：
 
 最小 Codex MCP 配置示例：
 
+Codex 推荐使用单 alias `agent-bus-codex`，并在支持工具白名单的版本中只启用 `codex_bus_sync`。TOML 示例见 [`docs/codex_mcp_config_example.toml`](docs/codex_mcp_config_example.toml)。
+
 ```json
 {
   "mcpServers": {
@@ -98,8 +100,9 @@ MCP server 暴露以下工具：
 ```
 
 说明：
-- 该 server 仍会暴露全部工具；对 Codex 的推荐使用方式是优先调用 `codex_bus_sync`
-- 如果 host 支持工具白名单，也可以只向 Codex 暴露 `codex_bus_sync`，以进一步减少无关工具选择
+- Codex 推荐只面对 `codex_bus_sync`；如果当前 Codex 版本不支持 `enabled_tools` / 工具白名单，则保持单 alias，并在使用说明中要求 Codex 优先使用 `codex_bus_sync`
+- `auto_review` policy 只用于澄清本地 task-card board 的边界，不是放宽 Codex sandbox
+- SOLO / TRAE worker 仍可使用完整原子工具或下方多 alias 方案
 
 最小请求示例：
 
@@ -125,6 +128,16 @@ MCP server 暴露以下工具：
 2. **轮询模式**：使用 `poll_for_task` 和 `poll_for_result` 而非阻塞变体，它们立即返回而不等待。
 
 阻塞的 `wait_for_task` / `wait_for_result` 仍然可用，推荐用于支持稳定阻塞工具调用的环境。
+
+## Dashboard
+
+可选的本地 Dashboard 提供 agents / tasks / events 的只读观察视图。它不会随 MCP server 自动启动，默认只绑定 `127.0.0.1`，第一版不创建、认领、完成或取消任务。启动示例：
+
+```bash
+python3 -m mcp_agent_bus.dashboard --data-dir ./data --host 127.0.0.1 --port 8765
+```
+
+更多说明见 [`docs/dashboard.md`](docs/dashboard.md)。
 
 ## 任务状态
 
