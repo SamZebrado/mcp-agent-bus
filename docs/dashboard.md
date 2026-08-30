@@ -33,7 +33,11 @@ http://127.0.0.1:8765
 The dashboard reads:
 
 - `mcp_agent_bus.sqlite`
-- `events.jsonl`
+- the `events.jsonl` audit mirror for event timelines
+
+SQLite is the authoritative task/event source. If `doctor` reports JSONL divergence,
+the dashboard task state remains SQLite-backed but its event timeline may be incomplete
+until the mirror is repaired.
 
 It does not:
 

@@ -6,6 +6,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
+from . import __version__
 from .bus import AgentBus, BusError
 
 
@@ -26,6 +27,7 @@ TOOLS: dict[str, dict[str, Any]] = {
             "priority": {"type": "integer"},
             "timeout_s": {"type": "integer"},
             "from_agent": {"type": "string"},
+            "client_request_id": {"type": "string"},
         },
         ["to", "body"],
     ),
@@ -89,6 +91,7 @@ TOOLS: dict[str, dict[str, Any]] = {
                         "priority": {"type": "integer"},
                         "timeout_s": {"type": "integer"},
                         "from_agent": {"type": "string"},
+                        "client_request_id": {"type": "string"},
                     },
                     "required": ["to", "body"],
                 },
@@ -134,6 +137,37 @@ TOOLS: dict[str, dict[str, Any]] = {
         },
         [],
     ),
+    "cancel_task": schema(
+        {
+            "task_id": {"type": "string"},
+            "agent_name": {"type": "string"},
+            "reason": {"type": "string"},
+        },
+        ["task_id", "agent_name"],
+    ),
+    "accept_task_result": schema(
+        {
+            "task_id": {"type": "string"},
+            "agent_name": {"type": "string"},
+            "note": {"type": "string"},
+        },
+        ["task_id", "agent_name"],
+    ),
+    "reject_task_result": schema(
+        {
+            "task_id": {"type": "string"},
+            "agent_name": {"type": "string"},
+            "note": {"type": "string"},
+        },
+        ["task_id", "agent_name"],
+    ),
+    "doctor": schema(
+        {
+            "recent_limit": {"type": "integer"},
+            "stranded_after_s": {"type": "integer"},
+        },
+        [],
+    ),
 }
 
 
@@ -152,7 +186,7 @@ class McpServer:
                 result = {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "mcp-agent-bus", "version": "0.1.0"},
+                    "serverInfo": {"name": "mcp-agent-bus", "version": __version__},
                     "instructions": (
                         "For Codex compact mode, prefer codex_bus_sync for the common register/send/claim/finish/watch/list "
                         "flow. Avoid manual polling loops and avoid frequent append_progress unless a durable human-auditable "
@@ -219,6 +253,10 @@ def tool_description(name: str) -> str:
             "Codex compact mode: auto-register agent and combine send, claim, finish, watch, and list into one call."
         ),
         "cleanup_event_log": "Archive old event-log lines and keep only the newest tail in events.jsonl.",
+        "cancel_task": "Cancel a new or expired task as its original sender.",
+        "accept_task_result": "Accept a done result as its original planner without changing done status.",
+        "reject_task_result": "Reject a done result as its original planner without changing done status.",
+        "doctor": "Inspect paths, SQLite, events, leases, agents, stranded tasks, and possible duplicates.",
     }
     return descriptions[name]
 

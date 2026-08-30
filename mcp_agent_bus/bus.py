@@ -23,6 +23,7 @@ TASK_STATES = {
 
 TERMINAL_STATES = {"done", "failed", "rejected", "cancelled", "expired"}
 CLAIMABLE_STATES = {"new", "expired"}
+SCHEMA_VERSION = 2
 
 
 class BusError(ValueError):
@@ -53,8 +54,10 @@ class AgentBus:
         self.conn.close()
 
     def _init_schema(self) -> None:
-        self.conn.executescript(
-            """
+        try:
+            self.conn.executescript(
+                """
+            BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS agents (
                 agent_name TEXT PRIMARY KEY,
                 role TEXT,
@@ -98,11 +101,90 @@ class AgentBus:
                 created_at REAL NOT NULL,
                 FOREIGN KEY(task_id) REFERENCES tasks(task_id)
             );
+
+            CREATE TABLE IF NOT EXISTS events (
+                event_id TEXT PRIMARY KEY,
+                ts REAL NOT NULL,
+                event_type TEXT NOT NULL,
+                task_id TEXT,
+                agent_name TEXT,
+                payload TEXT NOT NULL,
+                mirrored_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts, event_id);
+            CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, ts);
             """
-        )
+            )
+            task_columns = {
+                row["name"] for row in self.conn.execute("PRAGMA table_info(tasks)").fetchall()
+            }
+            additions = {
+                "client_request_id": "TEXT",
+                "result_review": "TEXT CHECK(result_review IN ('accepted','rejected'))",
+                "reviewed_by": "TEXT",
+                "reviewed_at": "REAL",
+                "review_note": "TEXT",
+            }
+            for column, definition in additions.items():
+                if column not in task_columns:
+                    self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} {definition}")
+            self.conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_sender_request
+                ON tasks(from_agent, client_request_id)
+                WHERE client_request_id IS NOT NULL
+                """
+            )
+            self._import_legacy_events()
+            self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            self.conn.execute("COMMIT")
+        except Exception:
+            if self.conn.in_transaction:
+                self.conn.execute("ROLLBACK")
+            raise
+
+    def _import_legacy_events(self) -> None:
+        """Seed the authoritative event table from an older JSONL-only store."""
+        if self.conn.execute("SELECT 1 FROM events LIMIT 1").fetchone() is not None:
+            return
+        archive_dir = self.data_dir / "event_archives"
+        paths = sorted(archive_dir.glob("*.jsonl")) if archive_dir.is_dir() else []
+        if self.event_log_path.exists():
+            paths.append(self.event_log_path)
+        if not paths:
+            return
+        for path in paths:
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeError):
+                continue
+            for line in lines:
+                try:
+                    event = json.loads(line)
+                    event_id = str(event["event_id"])
+                    ts = float(event["ts"])
+                    event_type = str(event["event_type"])
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                self.conn.execute(
+                    """
+                    INSERT OR IGNORE INTO events(
+                        event_id, ts, event_type, task_id, agent_name, payload, mirrored_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_id,
+                        ts,
+                        event_type,
+                        event.get("task_id"),
+                        event.get("agent_name"),
+                        self._canonical_json(event.get("payload", {})),
+                        now_s(),
+                    ),
+                )
 
     @contextmanager
-    def _write_tx(self) -> Iterator[None]:
+    def _write_tx(self, sync_events: bool = True) -> Iterator[None]:
         """Run a write transaction with an immediate SQLite write lock."""
         if self.conn.in_transaction:
             yield
@@ -114,23 +196,80 @@ class AgentBus:
         except Exception:
             self.conn.execute("ROLLBACK")
             raise
+        if sync_events:
+            self._sync_event_log()
 
     def _event(self, event_type: str, task_id: str | None = None, agent_name: str | None = None, **payload: Any) -> None:
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "ts": now_s(),
-            "event_type": event_type,
-            "task_id": task_id,
-            "agent_name": agent_name,
-            "payload": payload,
-        }
-        with self.event_log_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        self.conn.execute(
+            """
+            INSERT INTO events(event_id, ts, event_type, task_id, agent_name, payload)
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                now_s(),
+                event_type,
+                task_id,
+                agent_name,
+                self._canonical_json(payload),
+            ),
+        )
+
+    def _sync_event_log(self) -> None:
+        """Best-effort mirror of committed SQLite events into events.jsonl.
+
+        SQLite is authoritative. A separate immediate transaction serializes
+        cooperating mirror writers. Existing event IDs are checked before
+        appending so a crash between append and mirrored_at remains idempotent.
+        """
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            rows = self.conn.execute(
+                """
+                SELECT event_id, ts, event_type, task_id, agent_name, payload
+                FROM events WHERE mirrored_at IS NULL ORDER BY ts, event_id
+                """
+            ).fetchall()
+            if not rows:
+                self.conn.execute("COMMIT")
+                return
+            existing_ids: set[str] = set()
+            if self.event_log_path.exists():
+                with self.event_log_path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            existing_ids.add(str(json.loads(line)["event_id"]))
+                        except (KeyError, TypeError, json.JSONDecodeError):
+                            continue
+            self.event_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.event_log_path.open("ab", buffering=0) as fh:
+                for row in rows:
+                    if row["event_id"] not in existing_ids:
+                        event = {
+                            "event_id": row["event_id"],
+                            "ts": row["ts"],
+                            "event_type": row["event_type"],
+                            "task_id": row["task_id"],
+                            "agent_name": row["agent_name"],
+                            "payload": self._loads(row["payload"]),
+                        }
+                        fh.write((self._canonical_json(event) + "\n").encode("utf-8"))
+                    self.conn.execute(
+                        "UPDATE events SET mirrored_at = ? WHERE event_id = ?",
+                        (now_s(), row["event_id"]),
+                    )
+            self.conn.execute("COMMIT")
+        except (OSError, UnicodeError, sqlite3.Error):
+            if self.conn.in_transaction:
+                self.conn.execute("ROLLBACK")
 
     def _json(self, value: Any) -> str | None:
         if value is None:
             return None
         return json.dumps(value, ensure_ascii=False)
+
+    def _canonical_json(self, value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def _loads(self, value: str | None) -> Any:
         if value is None:
@@ -179,6 +318,37 @@ class AgentBus:
             "summary": self._short_text(task.get("summary")),
             "body": self._short_text(task.get("body")),
         }
+
+    def _send_payload(
+        self,
+        *,
+        to: str,
+        body: str,
+        acceptance_criteria: Any,
+        priority: int,
+        timeout_s: int | None,
+        from_agent: str | None,
+    ) -> str:
+        return self._canonical_json(
+            {
+                "to": to,
+                "body": body,
+                "acceptance_criteria": acceptance_criteria,
+                "priority": priority,
+                "timeout_s": timeout_s,
+                "from_agent": from_agent,
+            }
+        )
+
+    def _stored_send_payload(self, row: sqlite3.Row) -> str:
+        return self._send_payload(
+            to=row["to_agent"],
+            body=row["body"],
+            acceptance_criteria=self._loads(row["acceptance_criteria"]),
+            priority=int(row["priority"]),
+            timeout_s=row["timeout_s"],
+            from_agent=row["from_agent"],
+        )
 
     def _compact_task_result(self, result: dict[str, Any]) -> dict[str, Any]:
         compact = {"status": result.get("status")}
@@ -320,40 +490,148 @@ class AgentBus:
         priority: int | None = None,
         timeout_s: int | None = None,
         from_agent: str | None = None,
+        client_request_id: str | None = None,
     ) -> dict[str, Any]:
         if not to:
             raise BusError("to is required")
         if not body:
             raise BusError("body is required")
+        if client_request_id is not None:
+            client_request_id = client_request_id.strip()
+            if not client_request_id:
+                raise BusError("client_request_id must not be empty")
+            if not from_agent:
+                raise BusError("from_agent is required when client_request_id is supplied")
         task_id = f"task_{uuid.uuid4().hex[:16]}"
         ts = now_s()
         priority_value = int(priority or 0)
+        expected_payload = self._send_payload(
+            to=to,
+            body=body,
+            acceptance_criteria=acceptance_criteria,
+            priority=priority_value,
+            timeout_s=timeout_s,
+            from_agent=from_agent,
+        )
         with self._write_tx():
-            self.conn.execute(
-                """
+            if client_request_id is not None:
+                existing = self.conn.execute(
+                    "SELECT * FROM tasks WHERE from_agent = ? AND client_request_id = ?",
+                    (from_agent, client_request_id),
+                ).fetchone()
+                if existing is not None:
+                    if self._stored_send_payload(existing) != expected_payload:
+                        raise BusError(
+                            "client_request_id already exists with a different send payload"
+                        )
+                    task_id = existing["task_id"]
+                else:
+                    self.conn.execute(
+                        """
                 INSERT INTO tasks(
                     task_id, to_agent, from_agent, body, acceptance_criteria, priority,
-                    timeout_s, status, created_at, updated_at
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)
+                    timeout_s, status, created_at, updated_at, client_request_id
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)
                 """,
-                (
-                    task_id,
-                    to,
-                    from_agent,
-                    body,
-                    self._json(acceptance_criteria),
-                    priority_value,
-                    timeout_s,
-                    ts,
-                    ts,
-                ),
+                        (
+                            task_id, to, from_agent, body, self._json(acceptance_criteria),
+                            priority_value, timeout_s, ts, ts, client_request_id,
+                        ),
+                    )
+                    self._event(
+                        "task_sent", task_id=task_id, agent_name=from_agent,
+                        to=to, priority=priority_value, client_request_id=client_request_id,
+                    )
+            else:
+                self.conn.execute(
+                    """
+                    INSERT INTO tasks(
+                        task_id, to_agent, from_agent, body, acceptance_criteria, priority,
+                        timeout_s, status, created_at, updated_at, client_request_id
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, NULL)
+                    """,
+                    (
+                        task_id, to, from_agent, body, self._json(acceptance_criteria),
+                        priority_value, timeout_s, ts, ts,
+                    ),
+                )
+                self._event(
+                    "task_sent", task_id=task_id, agent_name=from_agent,
+                    to=to, priority=priority_value, client_request_id=None,
+                )
+        return self.get_task(task_id)
+
+    def cancel_task(self, task_id: str, agent_name: str, reason: str | None = None) -> dict[str, Any]:
+        if not task_id or not agent_name:
+            raise BusError("task_id and agent_name are required")
+        ts = now_s()
+        with self._write_tx():
+            self._expire_leases()
+            row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise BusError(f"task not found: {task_id}")
+            if row["from_agent"] != agent_name:
+                raise BusError(f"only sender {row['from_agent']} may cancel task {task_id}")
+            if row["status"] == "cancelled":
+                return self._row_to_task(row)
+            if row["status"] not in {"new", "expired"}:
+                raise BusError(
+                    f"task {task_id} cannot be cancelled from active/finished status {row['status']}"
+                )
+            self.conn.execute(
+                """
+                UPDATE tasks SET status = 'cancelled', claimed_by = NULL, lease_until = NULL,
+                    summary = ?, updated_at = ?, finished_at = ? WHERE task_id = ?
+                """,
+                (reason or "Cancelled by sender.", ts, ts, task_id),
             )
             self._event(
-                "task_sent",
-                task_id=task_id,
-                agent_name=from_agent,
-                to=to,
-                priority=priority_value,
+                "task_cancelled", task_id=task_id, agent_name=agent_name, reason=reason
+            )
+        return self.get_task(task_id)
+
+    def accept_task_result(
+        self, task_id: str, agent_name: str, note: str | None = None
+    ) -> dict[str, Any]:
+        return self._review_task_result(task_id, agent_name, "accepted", note)
+
+    def reject_task_result(
+        self, task_id: str, agent_name: str, note: str | None = None
+    ) -> dict[str, Any]:
+        return self._review_task_result(task_id, agent_name, "rejected", note)
+
+    def _review_task_result(
+        self, task_id: str, agent_name: str, decision: str, note: str | None
+    ) -> dict[str, Any]:
+        ts = now_s()
+        with self._write_tx():
+            row = self.conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise BusError(f"task not found: {task_id}")
+            if row["status"] != "done":
+                raise BusError(f"only done tasks can be reviewed; current status is {row['status']}")
+            if not row["from_agent"] or row["from_agent"] != agent_name:
+                raise BusError(f"only original sender {row['from_agent']} may review task {task_id}")
+            if row["result_review"] is not None:
+                if (
+                    row["result_review"] == decision
+                    and row["reviewed_by"] == agent_name
+                    and row["review_note"] == note
+                ):
+                    return self._row_to_task(row)
+                raise BusError(
+                    f"task {task_id} result is already reviewed as {row['result_review']}; review is immutable"
+                )
+            self.conn.execute(
+                """
+                UPDATE tasks SET result_review = ?, reviewed_by = ?, reviewed_at = ?,
+                    review_note = ?, updated_at = ? WHERE task_id = ?
+                """,
+                (decision, agent_name, ts, note, ts, task_id),
+            )
+            self._event(
+                "task_result_reviewed", task_id=task_id, agent_name=agent_name,
+                decision=decision, note=note,
             )
         return self.get_task(task_id)
 
@@ -576,6 +854,16 @@ class AgentBus:
         if task["status"] in TERMINAL_STATES:
             return {"status": "ok", "task": task}
         return {"status": "pending", "task": task}
+
+    def doctor(self, recent_limit: int = 5, stranded_after_s: int = 3600) -> dict[str, Any]:
+        from .diagnostics import run_doctor
+
+        self._sync_event_log()
+        return run_doctor(
+            self.data_dir,
+            recent_limit=recent_limit,
+            stranded_after_s=stranded_after_s,
+        )
 
     def cleanup_event_log(
         self,

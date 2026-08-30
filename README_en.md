@@ -1,133 +1,44 @@
 # mcp-agent-bus
 
-> A local MCP task bus for auditable SOLO multi-dialogue handoffs and compatible MCP agent tools.
+> A small, local, auditable MCP task bus for delegating work between existing agent or IDE conversations.
 
-This tool lets multiple SOLO dialogues or compatible MCP agent tools communicate through a local task bus. A planner agent can delegate tasks to worker agents, wait for results, and all task states, progress, and evidence are stored locally with an auditable append-only event log.
+MCP Agent Task Bus does not run agents or manage models and terminals. It provides a shared local task board: a planner sends work, workers claim it and return evidence, and the planner may explicitly review completed results.
 
-This project is intentionally small:
+## Architecture in 30 seconds
 
-- Python standard library only (no external dependencies)
-- SQLite for current state
-- Append-only `data/events.jsonl` for audit history
-- MCP stdio server exposing task delegation tools
-- CLI for manual testing and inspection
-- Smoke tests that do not call external AI services
-
-## Why This Project Exists
-
-When working on complex tasks with SOLO, it can be useful to split work across multiple specialized dialogues:
-- A main "planner" dialogue handles high-level planning and coordination
-- Specialized "worker" dialogues handle discrete, focused tasks (testing, documentation, refactoring, etc.)
-- This avoids overwhelming a single dialogue with too much context or too many responsibilities
-
-This task bus provides a structured way to coordinate these dialogues locally without external services.
-
-## What You Can Do With It
-
-- Delegate tasks from one agent to another
-- Track task states from new → claimed → running → done/failed
-- Attach progress updates and evidence to tasks
-- Wait for tasks or results with bounded timeouts
-- Maintain an auditable record of all task activity
-
-## Tools
-
-The MCP server exposes these tools:
-
-- `register_agent(agent_name, role?)`: Register or refresh a local agent identity
-- `send_task(to, body, acceptance_criteria?, priority?, timeout_s?, from_agent?)`: Create a task for another agent
-- `wait_for_task(agent_name, max_wait_s?, lease_s?)`: Blocking bounded wait for the next task, then claim it with a lease
-- `poll_for_task(agent_name, lease_s?)`: Non-blocking check for the next task; claim it if available (returns status="ok" if task found, status="empty" otherwise)
-- `claim_task(task_id, agent_name, lease_s?)`: Claim a specific new or expired task
-- `append_progress(task_id, agent_name, message, evidence?)`: Append progress and evidence; moves `claimed` → `running`
-- `finish_task(task_id, agent_name, status, summary, changed_files?, evidence?, error_message?)`: Mark task as done/failed/blocked/rejected/cancelled
-- `wait_for_result(task_id, max_wait_s?)`: Blocking bounded wait for task to reach terminal state (returns status="timeout" if no result in time)
-- `poll_for_result(task_id)`: Non-blocking check for task's result; returns status="ok" if terminal, status="pending" otherwise
-- `get_task(task_id)`: Get full task including progress
-- `list_tasks(filter?)`: List tasks with optional to/status/limit filters
-- `codex_bus_sync(agent_name, role?, send?, claim?, finish?, watch?, list?, compact=true)`: Compact workflow for Codex; auto-registers the agent and combines common bus actions
-
-## Codex compact mode
-
-`codex_bus_sync` is intended to reduce redundant MCP round trips, reduce context overhead, and provide a compact workflow for Codex.
-
-Key points:
-- All existing atomic tools remain available for SOLO / TRAE compatibility
-- `codex_bus_sync` is an additive compact entry point, not a replacement
-- The call auto-runs `register_agent(agent_name, role?)`
-- `compact=true` returns short task shapes and omits full progress / large evidence payloads
-
-Minimal Codex MCP config:
-
-```json
-{
-  "mcpServers": {
-    "agent-bus-codex": {
-      "command": "python3",
-      "args": ["-m", "mcp_agent_bus.server"],
-      "env": {
-        "PYTHONPATH": "/path/to/mcp-agent-bus",
-        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
-      }
-    }
-  }
-}
+```text
+planner MCP alias ─┐
+worker-tests alias ├─ stdio MCP ─ SQLite (authoritative state and events)
+worker-docs alias  ┘                 └─ events.jsonl (inspectable audit mirror)
 ```
 
-Recommended usage:
-- Prefer `codex_bus_sync` for register + send + claim + finish + watch + list
-- Avoid manual polling loops where possible
-- Use atomic tools only when you truly need full detail
+- Python standard library only
+- SQLite WAL for local multi-process access
+- Task state and the authoritative `events` table commit together; `events.jsonl` is a post-commit best-effort mirror
+- The MCP transport is currently **stdio only**; HTTP / Streamable HTTP is not implemented
+- The optional localhost dashboard is read-only
 
-## Blocking vs Polling Modes
+This is not an agent runtime, tmux orchestrator, provider framework, or workflow engine.
 
-For SOLO multi-dialogue usage, some MCP hosts may serialize tool calls to the same stdio server, which can cause long `wait_for_task` / `wait_for_result` calls to block other dialogues.
+## Verify in 30 seconds
 
-Recommended approaches:
-1. **Multiple separate MCP server aliases**: Configure a different MCP server alias for each active SOLO dialogue or role, both pointing to the same executable and sharing the same `MCP_AGENT_BUS_DATA_DIR`.
-2. **Polling mode**: Use `poll_for_task` and `poll_for_result` instead of the blocking variants, which return immediately without waiting.
+```bash
+git clone https://github.com/SamZebrado/mcp-agent-bus.git
+cd mcp-agent-bus
+python3 --version  # Python 3.10+
+bash run_smoke.sh
+```
 
-The blocking `wait_for_task` / `wait_for_result` are still available and recommended for environments that support stable blocking tool calls.
+The command runs a two-agent smoke, a real three-agent multi-process smoke, and the full unittest suite. It does not call an external AI service.
 
-## Task States
+## SOLO: separate aliases, one shared data directory
 
-`new`, `claimed`, `running`, `blocked`, `done`, `failed`, `rejected`, `cancelled`, `expired`
-
-## SOLO Multi-Dialogue Recommended Setup
-
-It is recommended to configure a separate MCP server alias for each active SOLO dialogue or role. All aliases should point to the same `mcp_agent_bus.server` executable and share the same `MCP_AGENT_BUS_DATA_DIR`.
-
-**Important distinction**:
-- **MCP server alias**: The key in the `mcpServers` configuration object (e.g., `agent-bus-planner`, `agent-bus-worker`). This determines how SOLO identifies and communicates with this server.
-- **agent_name**: The identifier registered via `register_agent()`, which determines task routing within the bus (e.g., `"planner-main"`, `"worker-docs"`, `"worker-tests"`).
-
-Different MCP server aliases sharing the same `MCP_AGENT_BUS_DATA_DIR` can communicate with each other in real time, which avoids issues where certain MCP hosts may serialize tool calls to the same stdio server alias.
-
-### Recommended Mapping
-
-| SOLO Dialogue | MCP Server Alias | agent_name |
-|---------------|------------------|------------|
-| Main/Planner | `agent-bus-planner` | `planner-main` |
-| Worker (docs) | `agent-bus-worker-docs` | `worker-docs` |
-| Worker (tests) | `agent-bus-worker-tests` | `worker-tests` |
-| Worker (review) | `agent-bus-worker-review` | `worker-review` |
-
-**Important**: When calling `send_task()`, use the `agent_name` as the `to` parameter, NOT the MCP server alias. For example: `send_task(to="worker-docs", ...)` sends to the worker-docs agent, not to the agent-bus-worker-docs server.
-
-### Example Multi-Dialogue Configuration
+Configure one MCP alias per active dialogue to avoid a host serializing long calls through one stdio server. Every alias must use the same absolute `MCP_AGENT_BUS_DATA_DIR`.
 
 ```json
 {
   "mcpServers": {
     "agent-bus-planner": {
-      "command": "python3",
-      "args": ["-m", "mcp_agent_bus.server"],
-      "env": {
-        "PYTHONPATH": "/path/to/mcp-agent-bus",
-        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
-      }
-    },
-    "agent-bus-worker-docs": {
       "command": "python3",
       "args": ["-m", "mcp_agent_bus.server"],
       "env": {
@@ -142,84 +53,96 @@ Different MCP server aliases sharing the same `MCP_AGENT_BUS_DATA_DIR` can commu
         "PYTHONPATH": "/path/to/mcp-agent-bus",
         "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
       }
+    },
+    "agent-bus-worker-docs": {
+      "command": "python3",
+      "args": ["-m", "mcp_agent_bus.server"],
+      "env": {
+        "PYTHONPATH": "/path/to/mcp-agent-bus",
+        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
+      }
     }
   }
 }
 ```
 
-In this setup:
-- `agent-bus-planner` is used by the main "planner" SOLO dialogue, which registers as `planner-main`
-- `agent-bus-worker-docs` is used by the docs worker SOLO dialogue, which registers as `worker-docs`
-- `agent-bus-worker-tests` is used by the tests worker SOLO dialogue, which registers as `worker-tests`
+An alias is a host connection name. `agent_name` is the routing identity inside the bus:
 
-All dialogues share the same SQLite database and event log for real-time task coordination.
+| Dialogue | Alias | `agent_name` |
+|---|---|---|
+| planner | `agent-bus-planner` | `planner-main` |
+| tests worker | `agent-bus-worker-tests` | `worker-tests` |
+| docs worker | `agent-bus-worker-docs` | `worker-docs` |
 
-## Verified Results
+Use `to="worker-tests"`, not the alias, when sending a task.
 
-### Dual MCP Server Alias Real-Time Communication
+## Codex compact mode
 
-- **Task ID**: task_869c4b7c23ee4818
-- **Setup**:
-  - Planner dialogue uses `agent-bus-planner` MCP server alias
-  - Worker dialogue uses `agent-bus-worker` MCP server alias
-  - Both share the same `MCP_AGENT_BUS_DATA_DIR`
-- **Steps**:
-  1. Planner-realtime sends task
-  2. Worker-realtime receives task while waiting in `wait_for_task`
-  3. Worker-realtime calls `append_progress`
-  4. Worker-realtime calls `finish_task(done)`
-  5. Planner-realtime calls `wait_for_result` and successfully reads done result
-- **Result**: ✅ All steps passed, no file modifications
-- **Environment**: SOLO
+For Codex, use one alias and prefer `codex_bus_sync` to combine register/send/claim/finish/watch/list and reduce MCP round trips. Atomic tools remain available for SOLO and TRAE.
 
-## Installation
-
-### Option 1: GitHub Clone
-
-```bash
-git clone https://github.com/SamZebrado/mcp-agent-bus.git
-cd mcp-agent-bus
-python3 --version # Requires Python 3.10+
-bash run_smoke.sh # Verify installation works
+```json
+{
+  "agent_name": "planner-main",
+  "send": [{
+    "to": "worker-docs",
+    "body": "Check the minimal README path",
+    "client_request_id": "readme-review-1"
+  }],
+  "compact": true
+}
 ```
 
-### Option 2: Download ZIP
+See [`docs/codex_mcp_config_example.toml`](docs/codex_mcp_config_example.toml).
+
+## Doctor: diagnose before retrying
 
 ```bash
-# Download GitHub ZIP and extract
-cd mcp-agent-bus-main
-python3 --version # Requires Python 3.10+
-bash run_smoke.sh # Verify installation works
+PYTHONPATH="$PWD" python3 -m mcp_agent_bus.cli --data-dir ./data doctor
 ```
 
-Then add the MCP server configuration to your SOLO or TRAE MCP settings.
+`doctor` does not create a missing directory or database. It reports effective paths and read/write checks, SQLite integrity and schema, agents and task counts, expired leases, old `new` tasks, heuristic possible duplicates, recent tasks/events, SQLite-to-JSONL divergence, and actionable `PASS/WARN/FAIL` checks.
 
-### Compatibility Notes
+SQLite is authoritative if the JSONL mirror diverges. See [`docs/operations.md`](docs/operations.md).
 
-- **SOLO**: Fully tested and verified
-- **TRAE CN / Other TRAE**: Theoretically compatible if supporting MCP stdio server, but not fully verified
-- **Other MCP hosts / agents**: Not tested, should work if compatible with MCP stdio server specification
+## Minimal task flow
 
-## Example Two-Agent Workflow
+Planner:
 
-### Planner Dialogue
-1. Call `register_agent("planner-main")`
-2. Call `send_task(to="worker-docs", body="Write a README draft", from_agent="planner-main")` and note the `task_id`
-3. Later, call `wait_for_result(task_id, max_wait_s=300)` to check for the result
+1. `register_agent(agent_name="planner-main", role="planner")`
+2. `send_task(to="worker-tests", body="Run tests", from_agent="planner-main", client_request_id="tests-1")`
+3. `poll_for_result(task_id)`
+4. Review a `done` result with `accept_task_result(...)` or `reject_task_result(...)`
 
-### Worker (Docs) Dialogue
-1. Call `register_agent("worker-docs")`
-2. Call `wait_for_task("worker-docs", max_wait_s=60)` or use `poll_for_task` to get the next task
-3. Do the work
-4. Optionally call `append_progress(task_id, "worker-docs", "In progress...")`
-5. Call `finish_task(task_id, "worker-docs", "done", "README draft completed", evidence={"file": "README.md"})`
+Worker:
 
-## Lease Behavior
+1. `register_agent(agent_name="worker-tests", role="worker")`
+2. `poll_for_task(agent_name="worker-tests")`
+3. Optionally call `append_progress(...)`
+4. `finish_task(..., status="done", summary="...", evidence={...})`
 
-When a task is claimed, it gets a time-limited lease. If the lease expires before the task is finished, the task will be marked as `expired` and becomes claimable again by the same worker. This gives visibility into timeouts while still allowing retries.
+`client_request_id` makes an ambiguous send retry safe: the same sender, key, and canonical payload return the original task; a changed payload fails. `cancel_task` lets only the original sender cancel an inactive `new/expired` task.
 
-## Project Scope & Limitations
+Run the three-agent example directly:
 
-For details about what this project does and does not do, see [SCOPE.md](./SCOPE.md).
+```bash
+PYTHONPATH="$PWD" python3 scripts/smoke_three_agents.py
+```
 
-For future plans and known limitations, see [TODO.md](./TODO.md).
+## Execution state and planner review
+
+Execution states remain compatible:
+
+```text
+new → claimed → running → done / failed / blocked / rejected / cancelled / expired
+```
+
+Planner review is separate metadata: `NULL → accepted | rejected`. It does not replace `done` and is distinct from a worker execution result of `rejected`. An identical repeat is idempotent; a review cannot be silently flipped.
+
+## More documentation
+
+- [`docs/operations.md`](docs/operations.md): doctor, idempotency, cancellation, review, audit consistency, and recovery actions
+- [`docs/three_agent_demo.md`](docs/three_agent_demo.md): planner + tests/docs workers
+- [`docs/solo_two_dialogue_test_plan.md`](docs/solo_two_dialogue_test_plan.md): SOLO connectivity plan
+- [`docs/dashboard.md`](docs/dashboard.md): read-only dashboard
+- [`SCOPE.md`](SCOPE.md): product boundary
+- [`TODO.md`](TODO.md): remaining non-blocking work

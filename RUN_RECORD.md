@@ -2,6 +2,75 @@
 
 ## Automated Local Verification
 
+### 2026-08-30 - v0.2 reliability / diagnostics gate
+
+Baseline before changes:
+
+```text
+local main == origin/main == d59b424119557a14d49952a8c7b10231a3f94b49
+bash run_smoke.sh: SMOKE OK + 35 tests PASS
+python3 -m unittest discover -s tests -v: 35/35 PASS
+```
+
+Final pre-review command:
+
+```bash
+bash run_smoke.sh
+```
+
+Result:
+
+```text
+SMOKE OK
+events=6
+MULTI_AGENT_SMOKE OK
+workers=worker-tests,worker-docs
+reviews=accepted,accepted
+events=13
+doctor=PASS
+..................................................
+----------------------------------------------------------------------
+Ran 50 tests in 3.850s
+
+OK
+```
+
+Independent full suite:
+
+```bash
+PYTHONPATH="$PWD" python3 -m unittest discover -s tests -v
+```
+
+Result:
+
+```text
+Ran 50 tests in 3.827s
+OK
+```
+
+Additional checks:
+
+```text
+Codex config TOML parse: TOML OK
+Dashboard module import: DASHBOARD IMPORT OK
+Python compileall: COMPILEALL OK
+CLI doctor on an initialized temporary store: PASS (all checks)
+CLI doctor on a missing store: FAIL without creating the path (test PASS)
+Read-only dashboard /healthz on 127.0.0.1:18765: returned HTML containing "ok"; server stopped cleanly
+```
+
+Coverage added in this gate:
+
+- simultaneous same-key send produces exactly one task and one `task_sent` event
+- simultaneous claim has exactly one winner
+- worker ownership, lease expiry, cancellation ownership/status, immutable planner review
+- authoritative SQLite event commit with recoverable JSONL mirror failure
+- legacy schema/event migration and archived-event consistency
+- compact Codex response shape and MCP stdio tool calls
+- planner + worker-tests + worker-docs multi-process flow with two accepted results
+
+First ChatGPT Web Bridge architecture review returned `CHANGES_REQUIRED`. Blocking findings were addressed by making SQLite events authoritative, defining canonical idempotency/race semantics, separating non-creating CLI doctor inspection, making planner review immutable, and adding deterministic concurrency tests in addition to the demo.
+
 ### 2026-05-13 - Latest smoke test
 
 Command:

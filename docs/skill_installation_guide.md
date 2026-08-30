@@ -10,15 +10,21 @@
    - 让 SOLO 进入项目目录
    - 让 SOLO 阅读 README.md 和 .trae/skills/mcp-agent-bus/SKILL.md
 
-3. **生成配置**：
+3. **先验证和诊断**：
+   - 运行 `bash run_smoke.sh`
+   - 对计划共享的绝对 data dir 运行 `python3 -m mcp_agent_bus.cli --data-dir <path> doctor`
+   - 缺失 store 时 doctor 不会替用户创建；先确认路径再初始化
+
+4. **生成配置**：
    - 让 SOLO 根据你的需求生成 MCP server alias 配置
 
-4. **添加 MCP server**：
+5. **添加 MCP server**：
    - 在 SOLO 或 TRAE 的 MCP 设置中添加配置
    - 重启或刷新 MCP
 
-5. **运行测试**：
+6. **运行测试**：
    - 让 SOLO 协助进行最小联通测试
+   - 需要多 worker 时可运行 `scripts/smoke_three_agents.py`
 
 ## 方式 B：手动安装 Skill 文件
 
@@ -35,4 +41,4 @@
 
 4. **重启/刷新**：重启或刷新 TRAE/SOLO
 
-5. **使用**：让 SOLO 使用该 Skill 帮助配置 MCP Agent Task Bus
+5. **使用**：让 SOLO 按安装检查 → doctor → alias → agent_name → 联通测试 → 多 worker 的顺序配置

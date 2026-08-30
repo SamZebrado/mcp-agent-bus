@@ -1,37 +1,62 @@
 ---
 name: mcp-agent-bus
-description: Configure and use a local MCP task bus for auditable SOLO multi-dialogue handoffs.
+description: Diagnose, configure, and use a local stdio MCP task bus for auditable SOLO multi-dialogue handoffs.
 ---
 
 # MCP Agent Bus Skill
 
-这个 Skill 帮助用户配置和使用 MCP Agent Task Bus，让多个 SOLO 对话可以进行任务接力、状态同步和可审计的记录。
+Use this Skill when a user wants existing SOLO/IDE conversations to delegate focused tasks through `mcp-agent-bus`. Keep the bus small: do not turn it into an agent runtime, terminal launcher, provider abstraction, or workflow engine.
 
-## 作用
+## Workflow
 
-- 当用户想让多个 SOLO 对话协作时
-- 当用户想让主对话管理 worker 对话时
-- 当用户需要记录任务状态和证据时
-- 当用户遇到同名 MCP server 串行调用问题时
+1. **Locate and verify**
+   - Resolve the project and shared data directory to absolute paths.
+   - Confirm Python 3.10+ and the files `mcp_agent_bus/server.py` and `run_smoke.sh`.
+   - Run `bash run_smoke.sh` for a new installation. Report the real result.
 
-## 操作步骤
+2. **Run doctor before configuration or retry**
 
-1. **检查项目位置**：确认项目在当前工作区或用户指定目录。
-2. **运行冒烟测试**：执行 `bash run_smoke.sh`，确保项目正常工作。
-3. **生成 MCP server alias 配置**：根据用户需求，生成单或多 alias 配置 JSON。
-4. **建议 agent_name**：为 planner 和不同 worker 建议合适的 agent_name。
-5. **指导最小联通测试**：给出 planner 发任务、worker 接任务并完成、planner 读结果的步骤。
-6. **选择模式**：解释阻塞 vs 轮询，推荐多 alias 方案避免串行问题。
+   ```bash
+   PYTHONPATH="/absolute/mcp-agent-bus" \
+   python3 -m mcp_agent_bus.cli \
+     --data-dir "/absolute/shared/data" doctor
+   ```
 
-## 输出要求
+   Do not create or replace a missing store merely to make doctor pass. Follow its `PASS/WARN/FAIL` actions. SQLite is authoritative; `events.jsonl` is a best-effort audit mirror.
 
-- 给出 MCP 配置 JSON
-- 给出 Planner Prompt 示例
-- 给出 Worker Prompt 示例
-- 不要声称未验证功能
-- 不自动修改用户系统配置，除非用户明确要求
+3. **Choose identities**
+   - Planner: `planner-main`
+   - Workers: short role names such as `worker-tests`, `worker-docs`
+   - Explain that the MCP alias is a connection name; `agent_name` is the task-routing identity.
 
-## 配置示例（多 alias）
+4. **Generate aliases**
+   - Use one stdio alias per active SOLO dialogue.
+   - Point every alias at `python3 -m mcp_agent_bus.server`.
+   - Give every alias the same absolute `PYTHONPATH` and `MCP_AGENT_BUS_DATA_DIR`.
+   - Do not claim HTTP / Streamable HTTP support.
+
+5. **Run a minimal connectivity check**
+   - Planner registers and sends to one worker with `from_agent` and a stable `client_request_id`.
+   - Worker registers, polls, claims, and finishes with evidence.
+   - Planner polls the exact task ID and accepts or rejects a `done` result.
+   - Prefer polling when the host may serialize calls on one stdio connection.
+
+6. **Expand to multiple workers only after the minimal check passes**
+   - Add one alias and `agent_name` per worker role.
+   - Send independent task IDs; do not invent a workflow graph.
+   - Offer `scripts/smoke_three_agents.py` as the local no-AI proof.
+
+7. **Diagnose failures**
+   - Ambiguous send timeout: retry once with the same `client_request_id` and identical payload.
+   - Possible duplicate `new` tasks: inspect first; only the original sender may cancel a confirmed stale `new/expired` task.
+   - Expired lease: let the assigned worker reclaim it.
+   - Wrong worker: compare `to` with registered `agent_name`, not alias.
+   - JSONL divergence: preserve SQLite and the data directory; do not infer state from JSONL alone.
+   - Database locked/integrity failure: stop broad retries and follow doctor actions.
+
+## Configuration template
+
+Generate entries from the user's real absolute paths:
 
 ```json
 {
@@ -40,28 +65,35 @@ description: Configure and use a local MCP task bus for auditable SOLO multi-dia
       "command": "python3",
       "args": ["-m", "mcp_agent_bus.server"],
       "env": {
-        "PYTHONPATH": "/path/to/mcp-agent-bus",
-        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
+        "PYTHONPATH": "/absolute/mcp-agent-bus",
+        "MCP_AGENT_BUS_DATA_DIR": "/absolute/shared/data"
       }
     },
-    "agent-bus-worker-docs": {
+    "agent-bus-worker-tests": {
       "command": "python3",
       "args": ["-m", "mcp_agent_bus.server"],
       "env": {
-        "PYTHONPATH": "/path/to/mcp-agent-bus",
-        "MCP_AGENT_BUS_DATA_DIR": "/path/to/mcp-agent-bus/data"
+        "PYTHONPATH": "/absolute/mcp-agent-bus",
+        "MCP_AGENT_BUS_DATA_DIR": "/absolute/shared/data"
       }
     }
   }
 }
 ```
 
-## Planner Prompt 示例
+## Prompt templates
 
-> 你是一个规划对话。使用 agent-bus-planner MCP server。
-> 注册 agent 为 planner-main，给 worker-docs 发送任务，等待或轮询结果。
+Planner:
 
-## Worker Prompt 示例
+> Use `<planner-alias>` and register as `<planner-agent-name>`. Send a focused task to `<worker-agent-name>` with a stable `client_request_id`. Keep the task ID, poll that exact result, inspect evidence, then accept or reject a done result.
 
-> 你是文档 worker 对话。使用 agent-bus-worker-docs MCP server。
-> 注册 agent 为 worker-docs，等待或轮询任务，执行后提交结果和证据。
+Worker:
+
+> Use `<worker-alias>` and register as `<worker-agent-name>`. Poll one assigned task, do only that task, and finish with a concise summary plus exact evidence. Do not claim or finish work addressed to another agent name.
+
+## Output requirements
+
+- Report verified, warning, and unverified states separately.
+- Provide the exact data directory, alias-to-agent mapping, minimal check, and recovery action.
+- Keep prompts short and role-specific.
+- Do not modify the user's MCP settings or runtime data unless explicitly asked.

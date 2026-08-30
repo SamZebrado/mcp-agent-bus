@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .bus import AgentBus
+from .bus import AgentBus, default_data_dir
+from .diagnostics import run_doctor
 
 
 def parse_json(value: str | None) -> Any:
@@ -37,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--acceptance-criteria")
     p.add_argument("--priority", type=int, default=0)
     p.add_argument("--timeout-s", type=int)
+    p.add_argument("--client-request-id")
 
     p = sub.add_parser("wait-for-task")
     p.add_argument("agent_name")
@@ -85,12 +87,40 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-archive", action="store_true")
     p.add_argument("--min-bytes", type=int)
 
+    p = sub.add_parser("cancel-task")
+    p.add_argument("task_id")
+    p.add_argument("agent_name")
+    p.add_argument("--reason")
+
+    p = sub.add_parser("accept-task-result")
+    p.add_argument("task_id")
+    p.add_argument("agent_name")
+    p.add_argument("--note")
+
+    p = sub.add_parser("reject-task-result")
+    p.add_argument("task_id")
+    p.add_argument("agent_name")
+    p.add_argument("--note")
+
+    p = sub.add_parser("doctor")
+    p.add_argument("--recent-limit", type=int, default=5)
+    p.add_argument("--stranded-after-s", type=int, default=3600)
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    bus = AgentBus(Path(args.data_dir).resolve() if args.data_dir else None)
+    data_dir = Path(args.data_dir).resolve() if args.data_dir else default_data_dir()
+    if args.command == "doctor":
+        result = run_doctor(
+            data_dir,
+            recent_limit=args.recent_limit,
+            stranded_after_s=args.stranded_after_s,
+        )
+        print_json(result)
+        return 1 if result["status"] == "FAIL" else 0
+    bus = AgentBus(data_dir)
     try:
         if args.command == "register-agent":
             result = bus.register_agent(args.agent_name, args.role)
@@ -102,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
                 priority=args.priority,
                 timeout_s=args.timeout_s,
                 from_agent=args.from_agent,
+                client_request_id=args.client_request_id,
             )
         elif args.command == "wait-for-task":
             result = bus.wait_for_task(args.agent_name, args.max_wait_s, args.lease_s)
@@ -135,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
                 archive=not args.no_archive,
                 min_bytes=args.min_bytes,
             )
+        elif args.command == "cancel-task":
+            result = bus.cancel_task(args.task_id, args.agent_name, args.reason)
+        elif args.command == "accept-task-result":
+            result = bus.accept_task_result(args.task_id, args.agent_name, args.note)
+        elif args.command == "reject-task-result":
+            result = bus.reject_task_result(args.task_id, args.agent_name, args.note)
         else:
             raise AssertionError(args.command)
         print_json(result)

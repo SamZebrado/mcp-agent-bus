@@ -14,6 +14,18 @@ mcp, solo, trae, agent, task-bus, multi-agent, sqlite, developer-tools
 
 ## 初版发布说明
 
+### v0.2.0 - Reliability and diagnostics
+
+- ✅ `doctor` 路径、权限、integrity、schema、agent/task/lease、stranded/possible duplicate 与事件一致性检查
+- ✅ SQLite 权威事件表与任务状态同事务；`events.jsonl` 为提交后审计 mirror
+- ✅ `client_request_id` 幂等发送与并发重试保护
+- ✅ 原 sender 安全取消未活跃任务
+- ✅ `done` 之外的 planner accepted/rejected 验收 metadata
+- ✅ planner + tests/docs worker 三进程 smoke 与独立并发 race 测试
+- ✅ 重写 README / Skill 的安装、诊断、多 alias 与故障动作流程
+
+仍保持 stdio、本地、只读 dashboard；未加入 agent runtime、workflow engine、HTTP 或云部署。
+
 ### v0.1.0 - Initial MVP
 
 这是 MCP Agent Task Bus 的初始 MVP 版本。

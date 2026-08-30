@@ -1,48 +1,60 @@
 # Project Scope
 
-This project is a local MCP Agent Task Bus designed to facilitate task handoff, status synchronization, result delivery, and audit logging between compatible MCP agents or tools.
+This project is a small local MCP task bus for handoff, status synchronization, result delivery, planner review, and auditability between existing compatible agent conversations or tools.
 
 ## What This Project Does
 
-- Provides a local SQLite-backed task storage layer with append-only event logging for auditability
-- Exposes an MCP stdio server that can be integrated into compatible MCP hosts
-- Offers a CLI for manual testing and inspection
+- Stores task state and authoritative append-only events in local SQLite WAL
+- Mirrors committed events to inspectable `events.jsonl` on a best-effort basis
+- Exposes an MCP **stdio** server and a local CLI
+- Provides a non-creating `doctor` inspection path with actionable `PASS/WARN/FAIL`
 - Supports:
-  - Registering agent identities with optional roles
-  - Sending tasks to specific agents with acceptance criteria, priorities, and timeouts
-  - Claiming tasks with time-limited leases
-  - Appending progress updates with evidence
-  - Marking tasks as done/failed/blocked/rejected/cancelled
-  - Waiting for new tasks (bounded)
-  - Waiting for task results (bounded)
-  - Listing and inspecting tasks
-  - Lease expiration that makes timed-out tasks claimable again
+  - agent registration and last-seen state
+  - directed task send with acceptance criteria, priority, timeout, and optional idempotency key
+  - leased claim, progress, worker ownership, result, bounded wait, and polling
+  - safe sender-only cancellation of inactive `new/expired` tasks
+  - planner-only acceptance/rejection metadata for `done` results
+  - compact Codex calls while retaining atomic SOLO/TRAE tools
+  - a read-only localhost dashboard
 
 ## What This Project Is For
 
-- Enabling multiple SOLO dialogues to split up work and hand off tasks locally
-- Letting a main "planner" agent delegate discrete tasks to specialized "worker" agents
-- Maintaining an auditable trail of task state changes and evidence
-- Coordinating work without requiring external services or network access
+- Splitting focused work across SOLO or compatible MCP dialogues
+- Letting a planner delegate independent tasks to named workers
+- Making ambiguous send retries safe with `client_request_id`
+- Keeping local task state, evidence, review, and events inspectable
+- Coordinating existing conversations without running or spawning them
 
 ## What This Project Does Not Do
 
-- Does not control arbitrary AI tools or bypass any restrictions
-- Does not provide free compute or agent capacity
-- Does not automatically complete tasks; tasks are executed by the agents that claim them
-- Does not replace human judgment; it is still recommended for users or the primary agent to review and accept results
-- Does not guarantee any particular outcome or success rate
-- Does not currently support multi-step delegation trees, explicit acceptance/rejection flows, or optional HTTP/SSE transports (see TODO.md for future plans)
-- Does not implement per-agent authorization tokens for remote access (designed for local use only)
+- Does not run, spawn, schedule, or supervise agents or terminals
+- Does not provide an LLM provider abstraction or execute task bodies
+- Does not implement workflow graphs, parent/child orchestration, or automatic reassignment
+- Does not provide generic agent chat/inbox semantics or file reservations
+- Does not expose writable dashboard controls
+- Does not implement HTTP, Streamable HTTP, SSE, WebSocket, or cloud deployment
+- Does not provide network authentication; it is designed for a trusted local process boundary
+- Does not bypass host sandbox, approval, or safety restrictions
+
+## State and review boundary
+
+Worker execution uses the existing task states:
+
+`new`, `claimed`, `running`, `blocked`, `done`, `failed`, `rejected`, `cancelled`, `expired`.
+
+Planner result review is separate metadata (`NULL`, `accepted`, `rejected`) and never changes `done`. It does not reopen or reassign rejected results.
 
 ## Data Storage
 
-- By default, all data is stored locally in the `./data` directory (can be configured via `MCP_AGENT_BUS_DATA_DIR` environment variable)
-- Data includes:
-  - SQLite database (`mcp_agent_bus.sqlite`) for current task and agent state
-  - Append-only JSONL event log (`events.jsonl`) for audit history
+The default `./data` directory may be overridden by `MCP_AGENT_BUS_DATA_DIR` and contains:
+
+- `mcp_agent_bus.sqlite`: authoritative tasks, agents, progress, review, and events
+- SQLite WAL/SHM files while active
+- `events.jsonl`: post-commit audit mirror
+- optional `event_archives/*.jsonl` created by event-log cleanup
+
+SQLite and a filesystem log cannot commit atomically. `doctor` detects mirror divergence; SQLite remains authoritative.
 
 ## Agent Compatibility
 
-- Agents must support MCP and be able to call the tools exposed by this server
-- Worker agents should include relevant evidence when finishing tasks (e.g., modified files, command outputs, test results, error details)
+Agents need an MCP host that supports stdio tools. Multiple aliases may share one absolute data directory. Workers should return concise evidence such as commands, files, or test results.

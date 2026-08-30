@@ -13,12 +13,13 @@ MCP Agent Task Bus 是一个本地 MCP 任务总线工具，它让多个 SOLO �
 
 ## 创作过程
 
-- 首先实现核心 bus.py：提供 SQLite + append-only 事件日志的任务管理
+- 首先实现核心 bus.py：SQLite 保存权威任务状态和事件，JSONL 作为可检查的提交后 mirror
 - 然后实现 MCP server.py：暴露工具接口
 - 添加 CLI：用于手动测试
 - 增强非阻塞 poll_for_task / poll_for_result：解决某些 host 串行调用问题
 - 添加多对话配置说明
 - 验证真实 SOLO 双对话实时通信
+- 增加 doctor、幂等发送、安全取消、planner 验收与三 agent 多进程 smoke
 
 ## 使用场景
 
@@ -35,15 +36,19 @@ MCP Agent Task Bus 是一个本地 MCP 任务总线工具，它让多个 SOLO �
 - 进度更新与证据附加
 - 任务完成与结果回传
 - 可配置的本地数据存储
-- Append-only 事件日志，支持审计
+- SQLite 权威 append-only 事件表 + best-effort JSONL 审计 mirror
 - 任务租约过期机制，避免任务卡死
 - 阻塞式和非阻塞式工具调用选项
+- doctor 提供 PASS/WARN/FAIL 和明确动作
+- `client_request_id` 保护 timeout 后的安全重发
+- planner 可在不改变 `done` 的情况下接受或拒绝结果
 
 ## 使用步骤
 
 1. **准备项目**：
    - 确保项目位于本地，Python 3.10+ 可用
    - 运行 `bash run_smoke.sh` 验证项目可用
+   - 对共享 data dir 运行 `doctor`，先处理 FAIL/WARN
 
 2. **配置 MCP server**：
    - 在每个需要协作的 SOLO 对话的 MCP 设置中添加对应 alias
@@ -62,6 +67,14 @@ MCP Agent Task Bus 是一个本地 MCP 任务总线工具，它让多个 SOLO �
    - 调用 finish_task 提交结果
 
 ## 效果展示
+
+### 自动化三 agent 演示
+
+- Planner：`planner-main`
+- Workers：`worker-tests`、`worker-docs`
+- 两个 worker 在独立进程中共享同一个 data dir，分别完成任务
+- Planner 聚合并显式接受两个 `done` 结果
+- JSONL 全量可解析，最终 `doctor=PASS`
 
 ### 已验证演示：双 MCP Server Alias 实时通信
 
@@ -87,4 +100,4 @@ MCP Agent Task Bus 是一个本地 MCP 任务总线工具，它让多个 SOLO �
 - 本项目保持极简，仅使用 Python 标准库
 - 多 alias 共享同一 data dir 方案有效解决了某些 host 串行调用问题
 - 不声称万能控制器、控制任意 AI、免费 agent pool、保证完成所有任务等未验证功能
-- 未来可以添加更多功能（如心跳、父子任务、显式接受拒绝、HTTP 传输等）
+- 后续优先是 JSONL mirror 的显式备份/重建工具与更多 host 验证；HTTP 仅保留设计评估，不扩张为通用框架

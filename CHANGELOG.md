@@ -1,7 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 - 2026-08-30
 
+- Added `doctor` CLI/MCP diagnostics for effective paths, permissions, SQLite integrity/schema, agents, task counts, lease expiry, stranded tasks, possible duplicates, recent records, and audit-mirror divergence
+- Made SQLite `events` the authoritative transactional audit source and documented `events.jsonl` as a best-effort post-commit mirror
+- Added `client_request_id` send idempotency with canonical payload checks and concurrent retry protection
+- Added sender-only `cancel_task` for inactive `new/expired` tasks
+- Added immutable planner `accept_task_result` / `reject_task_result` metadata without changing existing `done` semantics
+- Added a planner + tests/docs worker multi-process smoke and deterministic send/claim race tests
+- Reworked README / README_en and the reusable Skill around install, doctor, aliases, connectivity, multi-worker setup, and actionable diagnosis
 - Added `codex_bus_sync` as a compact workflow tool for Codex-oriented MCP usage
 - Added MCP initialize instructions recommending `codex_bus_sync` to reduce redundant MCP round trips and context overhead
 - Added tests covering compact workflow send/claim/finish/watch behavior and compact payload shape

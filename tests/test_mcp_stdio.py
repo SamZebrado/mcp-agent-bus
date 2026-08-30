@@ -37,6 +37,9 @@ class McpStdioTests(unittest.TestCase):
                 self.assertIn("send_task", names)
                 self.assertIn("wait_for_result", names)
                 self.assertIn("codex_bus_sync", names)
+                self.assertIn("doctor", names)
+                self.assertIn("cancel_task", names)
+                self.assertIn("accept_task_result", names)
 
                 call = {
                     "jsonrpc": "2.0",
@@ -58,7 +61,11 @@ class McpStdioTests(unittest.TestCase):
                         "name": "codex_bus_sync",
                         "arguments": {
                             "agent_name": "planner",
-                            "send": [{"to": "worker", "body": "compact task"}],
+                            "send": [{
+                                "to": "worker",
+                                "body": "compact task",
+                                "client_request_id": "compact-1",
+                            }],
                         },
                     },
                 }
@@ -68,6 +75,18 @@ class McpStdioTests(unittest.TestCase):
                 sync_payload = json.loads(sync_result["result"]["content"][0]["text"])
                 self.assertTrue(sync_payload["compact"])
                 self.assertEqual(sync_payload["send"][0]["status"], "new")
+
+                doctor = {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {"name": "doctor", "arguments": {}},
+                }
+                proc.stdin.write(json.dumps(doctor) + "\n")
+                proc.stdin.flush()
+                doctor_result = json.loads(proc.stdout.readline())
+                doctor_payload = json.loads(doctor_result["result"]["content"][0]["text"])
+                self.assertEqual(doctor_payload["status"], "PASS")
             finally:
                 proc.terminate()
                 proc.wait(timeout=5)
