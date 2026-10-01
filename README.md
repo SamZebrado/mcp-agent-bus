@@ -4,6 +4,14 @@
 
 MCP Agent Task Bus 不运行 agent，也不管理模型或终端。它只提供一块共享的本地任务板：planner 发送任务，worker 领取并返回证据，planner 可显式验收结果。
 
+## 当前定位
+
+Codex 当前已经提供原生的多 agent 与跨 task/thread 协作能力。**如果工作完全发生在 Codex 内部，应优先使用 Codex 原生能力**，无需为了同类编排再额外引入本项目。
+
+`mcp-agent-bus` 当前保留的价值是一个 **provider-neutral、host-neutral 的本地协调层**：当多个彼此独立的 MCP host/runtime 需要共享任务状态时，它提供统一的 stdio 工具契约、持久 SQLite 状态、幂等发送、lease ownership、显式结果验收和可审计事件记录。这些状态不依赖某个特定 AI 产品自己的 thread/session 生命周期。
+
+项目因此进入“稳定工具”定位：优先保证兼容性、可靠性和可测试性，不主动扩展成通用 agent runtime。
+
 ## 30 秒架构
 
 ```text
@@ -29,7 +37,7 @@ python3 --version  # 需要 Python 3.10+
 bash run_smoke.sh
 ```
 
-`run_smoke.sh` 会运行双 agent smoke、planner + 两个 worker 的多进程 smoke，以及完整 unittest；不会调用外部 AI。
+`run_smoke.sh` 会运行双 agent smoke、planner + 两个 worker 的多进程 smoke，以及完整 unittest；其中包含两个独立假 MCP host 通过真实 stdio/JSON-RPC 完成 send → claim → progress → finish → result → review 的端到端测试。不会调用任何外部 AI。
 
 ## SOLO：多个 alias，共享一个 data dir
 
@@ -76,9 +84,11 @@ alias 是 MCP host 的连接名；`agent_name` 才是总线内的路由身份：
 
 发送时 `to="worker-tests"`，不要填 alias。
 
-## Codex compact mode
+## Compact sync
 
-Codex 推荐单 alias，并优先使用 `codex_bus_sync` 合并 register/send/claim/finish/watch/list，减少 MCP round trips。原子工具仍保留给 SOLO / TRAE。
+对任何兼容 MCP host，都可以优先使用 provider-neutral 的 `bus_sync` 合并 register/send/claim/finish/watch/list，减少 MCP round trips。
+
+旧的 `codex_bus_sync` 名称继续保留为兼容别名；已有配置无需迁移。Codex-only 工作流本身应优先考虑 Codex 原生跨 task/thread 协作，而不是为了相同用途额外增加一层 bus。
 
 ```json
 {
@@ -92,7 +102,7 @@ Codex 推荐单 alias，并优先使用 `codex_bus_sync` 合并 register/send/cl
 }
 ```
 
-完整 TOML 示例见 [`docs/codex_mcp_config_example.toml`](docs/codex_mcp_config_example.toml)。
+现有 Codex TOML 示例仍见 [`docs/codex_mcp_config_example.toml`](docs/codex_mcp_config_example.toml)；其他 MCP host 只需启动同一个 stdio server，并让独立连接共享同一个绝对 `MCP_AGENT_BUS_DATA_DIR`。
 
 ## Doctor：先诊断，再重试
 
