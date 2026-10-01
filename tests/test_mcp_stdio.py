@@ -28,7 +28,7 @@ class McpStdioTests(unittest.TestCase):
                 proc.stdin.flush()
                 init = json.loads(proc.stdout.readline())
                 self.assertEqual(init["result"]["serverInfo"]["name"], "mcp-agent-bus")
-                self.assertIn("codex_bus_sync", init["result"]["instructions"])
+                self.assertIn("bus_sync", init["result"]["instructions"])
 
                 proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n")
                 proc.stdin.flush()
@@ -36,6 +36,7 @@ class McpStdioTests(unittest.TestCase):
                 names = {tool["name"] for tool in listed["result"]["tools"]}
                 self.assertIn("send_task", names)
                 self.assertIn("wait_for_result", names)
+                self.assertIn("bus_sync", names)
                 self.assertIn("codex_bus_sync", names)
                 self.assertIn("doctor", names)
                 self.assertIn("cancel_task", names)

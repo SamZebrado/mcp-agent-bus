@@ -12,7 +12,8 @@
 ## MCP Compatibility
 
 - [x] Keep stdio transport explicit in README and diagnostics
-- [ ] Verify additional MCP hosts beyond current SOLO/Codex-oriented testing
+- [x] Add provider-neutral two-host stdio/JSON-RPC E2E coverage with deterministic fake hosts
+- [ ] Verify a real additional MCP host only when a concrete integration needs it
 - [ ] Write a design-only note for optional Streamable HTTP, including authentication and threat-model costs
 
 HTTP implementation is intentionally not prioritized while the project remains local and small.

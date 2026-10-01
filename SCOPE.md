@@ -14,16 +14,19 @@ This project is a small local MCP task bus for handoff, status synchronization, 
   - leased claim, progress, worker ownership, result, bounded wait, and polling
   - safe sender-only cancellation of inactive `new/expired` tasks
   - planner-only acceptance/rejection metadata for `done` results
-  - compact Codex calls while retaining atomic SOLO/TRAE tools
+  - provider-neutral compact `bus_sync` calls, with `codex_bus_sync` retained as a compatibility alias
   - a read-only localhost dashboard
 
 ## What This Project Is For
 
-- Splitting focused work across SOLO or compatible MCP dialogues
+- Coordinating independent MCP hosts/runtimes through one provider-neutral local task contract
 - Letting a planner delegate independent tasks to named workers
 - Making ambiguous send retries safe with `client_request_id`
 - Keeping local task state, evidence, review, and events inspectable
+- Preserving coordination state independently of any one host's conversation/thread lifecycle
 - Coordinating existing conversations without running or spawning them
+
+For Codex-only workflows, prefer Codex native multi-agent and cross-task/thread coordination when it already covers the required workflow.
 
 ## What This Project Does Not Do
 
@@ -57,4 +60,4 @@ SQLite and a filesystem log cannot commit atomically. `doctor` detects mirror di
 
 ## Agent Compatibility
 
-Agents need an MCP host that supports stdio tools. Multiple aliases may share one absolute data directory. Workers should return concise evidence such as commands, files, or test results.
+Agents need an MCP host that supports stdio tools. Multiple independent host connections may share one absolute data directory. The automated cross-host E2E test simulates two independent MCP hosts over real stdio/JSON-RPC without calling an external AI service. Workers should return concise evidence such as commands, files, or test results.
