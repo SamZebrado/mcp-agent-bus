@@ -46,9 +46,25 @@ class AgentBus:
         self.event_log_path = self.data_dir / "events.jsonl"
         self.conn = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA busy_timeout=30000")
+        self._enable_wal()
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._init_schema()
+
+    def _enable_wal(self) -> None:
+        """Enable WAL robustly when several local MCP hosts start together."""
+        deadline = time.monotonic() + 30.0
+        while True:
+            try:
+                row = self.conn.execute("PRAGMA journal_mode=WAL").fetchone()
+                mode = str(row[0]).lower() if row is not None else ""
+                if mode != "wal":
+                    raise BusError(f"failed to enable SQLite WAL mode: {mode or 'unknown'}")
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
 
     def close(self) -> None:
         self.conn.close()
