@@ -4,6 +4,14 @@
 
 MCP Agent Task Bus does not run agents or manage models and terminals. It provides a shared local task board: a planner sends work, workers claim it and return evidence, and the planner may explicitly review completed results.
 
+## Current role
+
+Codex now provides native multi-agent and cross-task/thread coordination. **For workflows that live entirely inside Codex, prefer the native Codex capabilities** rather than adding this project for equivalent orchestration.
+
+`mcp-agent-bus` now focuses on a **provider-neutral, host-neutral local coordination layer** for independent MCP hosts/runtimes that need shared task state. It provides a common stdio tool contract, persistent SQLite state, idempotent sends, leased ownership, explicit result review, and auditable events without depending on one product's thread/session lifecycle.
+
+The project is therefore treated as a stable utility: prioritize compatibility, reliability, and testability rather than expanding it into a general agent runtime.
+
 ## Architecture in 30 seconds
 
 ```text
@@ -29,7 +37,7 @@ python3 --version  # Python 3.10+
 bash run_smoke.sh
 ```
 
-The command runs a two-agent smoke, a real three-agent multi-process smoke, and the full unittest suite. It does not call an external AI service.
+The command runs a two-agent smoke, a real three-agent multi-process smoke, and the full unittest suite. The suite includes two independent fake MCP hosts completing send → claim → progress → finish → result → review over real stdio/JSON-RPC. It does not call an external AI service.
 
 ## SOLO: separate aliases, one shared data directory
 
@@ -76,9 +84,11 @@ An alias is a host connection name. `agent_name` is the routing identity inside 
 
 Use `to="worker-tests"`, not the alias, when sending a task.
 
-## Codex compact mode
+## Compact sync
 
-For Codex, use one alias and prefer `codex_bus_sync` to combine register/send/claim/finish/watch/list and reduce MCP round trips. Atomic tools remain available for SOLO and TRAE.
+Any compatible MCP host may use the provider-neutral `bus_sync` tool to combine register/send/claim/finish/watch/list and reduce MCP round trips.
+
+The older `codex_bus_sync` name remains as a backward-compatible alias, so existing configurations do not need to migrate. Codex-only workflows should generally prefer Codex native cross-task/thread coordination instead of adding a bus for the same purpose.
 
 ```json
 {
@@ -92,7 +102,7 @@ For Codex, use one alias and prefer `codex_bus_sync` to combine register/send/cl
 }
 ```
 
-See [`docs/codex_mcp_config_example.toml`](docs/codex_mcp_config_example.toml).
+The existing Codex TOML example remains in [`docs/codex_mcp_config_example.toml`](docs/codex_mcp_config_example.toml). Other MCP hosts only need to launch the same stdio server and share one absolute `MCP_AGENT_BUS_DATA_DIR` across independent connections.
 
 ## Doctor: diagnose before retrying
 
