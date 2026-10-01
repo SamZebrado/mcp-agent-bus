@@ -170,6 +170,10 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
 }
 
+# Provider-neutral compact sync name. Keep the original Codex-specific name as a
+# backward-compatible alias for existing configurations.
+TOOLS["bus_sync"] = TOOLS["codex_bus_sync"]
+
 
 class McpServer:
     def __init__(self, data_dir: Path | None = None):
@@ -188,9 +192,9 @@ class McpServer:
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "mcp-agent-bus", "version": __version__},
                     "instructions": (
-                        "For Codex compact mode, prefer codex_bus_sync for the common register/send/claim/finish/watch/list "
-                        "flow. Avoid manual polling loops and avoid frequent append_progress unless a durable human-auditable "
-                        "checkpoint is truly needed."
+                        "Prefer bus_sync for the common register/send/claim/finish/watch/list flow. "
+                        "codex_bus_sync is retained as a backward-compatible alias. Avoid manual polling loops and avoid "
+                        "frequent append_progress unless a durable human-auditable checkpoint is truly needed."
                     ),
                 }
                 return {"jsonrpc": "2.0", "id": req_id, "result": result}
@@ -232,7 +236,8 @@ class McpServer:
     def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         if name not in TOOLS:
             raise BusError(f"unknown tool: {name}")
-        func: Callable[..., Any] = getattr(self.bus, name)
+        implementation_name = "codex_bus_sync" if name == "bus_sync" else name
+        func: Callable[..., Any] = getattr(self.bus, implementation_name)
         return func(**arguments)
 
 
@@ -249,8 +254,11 @@ def tool_description(name: str) -> str:
         "poll_for_result": "Non-blocking check for a task's result; return immediately.",
         "get_task": "Read a task including progress entries.",
         "list_tasks": "List tasks with optional status/to/limit filter.",
+        "bus_sync": (
+            "Provider-neutral compact mode: auto-register an agent and combine send, claim, finish, watch, and list into one call."
+        ),
         "codex_bus_sync": (
-            "Codex compact mode: auto-register agent and combine send, claim, finish, watch, and list into one call."
+            "Backward-compatible alias for bus_sync. Existing Codex configurations may keep using this name."
         ),
         "cleanup_event_log": "Archive old event-log lines and keep only the newest tail in events.jsonl.",
         "cancel_task": "Cancel a new or expired task as its original sender.",
