@@ -1,3 +1,10 @@
+## Unreleased
+
+- Added provider-neutral `bus_sync` as the preferred compact coordination tool; `codex_bus_sync` remains a compatibility alias.
+- Added a deterministic two-host MCP stdio/JSON-RPC E2E test covering send, idempotent retry, claim, progress, finish, result, planner review, and doctor.
+- Hardened concurrent first-start SQLite WAL initialization so independent MCP hosts can start against the same fresh data directory without a transient lock failure.
+- Clarified the project boundary: Codex-only workflows should prefer native Codex coordination; this project focuses on provider/host-neutral persistent local coordination.
+
 # Changelog
 
 ## v0.2.0 - 2026-08-30
