@@ -58,3 +58,10 @@ Current limitations:
 - No WebSocket or realtime push; pages use manual refresh plus lightweight browser refresh.
 
 Future work may add a separate, explicitly enabled human review mode, but that is outside v1.
+
+
+## Network boundary
+
+The dashboard checks the HTTP Host authority before reading task data, including on detail and health routes, to reject DNS-rebinding hostnames. The default loopback binding accepts only `127.0.0.1` and `localhost` with the configured port. An explicit external `--host` accepts that configured host; a wildcard `0.0.0.0` bind additionally accepts the connection's destination IP, not arbitrary DNS names.
+
+This check is not authentication. External binding can disclose task bodies, evidence, events and raw metadata to clients that can reach the port. Keep the default loopback binding, or restrict explicit external access with a trusted network/firewall. Reverse proxies with different Host names are rejected.

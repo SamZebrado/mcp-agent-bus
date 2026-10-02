@@ -58,8 +58,22 @@ def json_pretty(value: Any) -> str:
 
 class DashboardHandler(BaseHTTPRequestHandler):
     store: DashboardStore
+    bind_host: str = DEFAULT_HOST
 
     def do_GET(self) -> None:
+        hosts = {self.bind_host.lower()}
+        if self.bind_host in {"127.0.0.1", "localhost"}:
+            hosts.update({"127.0.0.1", "localhost"})
+        elif self.bind_host == "0.0.0.0":
+            # An explicit wildcard bind accepts its actual destination IP, never arbitrary DNS names.
+            hosts.add(self.connection.getsockname()[0])
+        port = self.server.server_port
+        authorities = {f"{host}:{port}" for host in hosts}
+        if port == 80:
+            authorities.update(hosts)
+        if self.headers.get("Host", "").lower() not in authorities:
+            self.send_error(HTTPStatus.FORBIDDEN, "Invalid dashboard Host")
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self.render_overview(parsed.query)
@@ -306,6 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     Handler.store = store
+    Handler.bind_host = args.host
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"mcp-agent-bus dashboard listening on http://{args.host}:{args.port}")
     print(f"data dir: {store.data_dir}")
