@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
 import unittest
 from pathlib import Path
 
@@ -18,6 +21,50 @@ class DashboardTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.bus.close()
         self.tmp.cleanup()
+
+    def test_http_host_gate_blocks_rebinding_before_task_reads(self) -> None:
+        task = self.bus.send_task("worker", "synthetic private dashboard body")
+        store = DashboardStore(self.data_dir)
+
+        class Handler(DashboardHandler):
+            pass
+
+        Handler.store = store
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for path in ["/", f"/task/{task['task_id']}", "/healthz"]:
+                conn = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                conn.request("GET", path, headers={"Host": f"attacker.example:{server.server_port}"})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 403)
+                self.assertNotIn("synthetic private dashboard body", response.read().decode())
+                conn.close()
+            for hostname in ["127.0.0.1", "localhost"]:
+                conn = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                conn.request("GET", f"/task/{task['task_id']}", headers={"Host": f"{hostname}:{server.server_port}"})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertIn("synthetic private dashboard body", response.read().decode())
+                conn.close()
+            for binding, hostname, expected in [
+                ("192.0.2.10", "192.0.2.10", 200),
+                ("192.0.2.10", "127.0.0.1", 403),
+                ("0.0.0.0", "127.0.0.1", 200),
+                ("0.0.0.0", "attacker.example", 403),
+            ]:
+                Handler.bind_host = binding
+                conn = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                conn.request("GET", "/healthz", headers={"Host": f"{hostname}:{server.server_port}"})
+                response = conn.getresponse()
+                self.assertEqual(response.status, expected)
+                response.read()
+                conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     def test_dashboard_module_imports(self) -> None:
         self.assertIsNotNone(DashboardHandler)
