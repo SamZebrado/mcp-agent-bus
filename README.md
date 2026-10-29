@@ -9,6 +9,9 @@ MCP Agent Task Bus 不运行 agent，也不管理模型或终端。它只提供�
 **新增可选独立组件：[Agent Bus Light](light/README.md)。** 只复制 `light/`
 子目录即可使用文本 Responses API 第二意见工具（默认离线、无运行时依赖）。
 不启动完整 bus、不走任务租约、不改原登录；与下面的稳定任务总线是独立入口。
+**[独立生图入口](light/IMAGE_GENERATION.md)** 同样位于 `light/`，默认离线预览；
+不暴露给 MCP/chat 自动调用。Flare/Sunburst 暂仅预览，Mini 为限期旧模型；
+本地单次估价不是供应商硬限额或累计预算。输入确认与 key 均隐藏且不落盘。
 Light 的 Harness/ACP 后端目前仅有 mock 契约测试，不是已实现后端。先阅读其授权、隐私与预算边界。
 
 **独立协议工具：[ACP-to-MCP](acp_bridge/README.md)。** 可单独复制 `acp_bridge/`
@@ -167,6 +170,7 @@ Planner 验收是独立 metadata：`NULL → accepted | rejected`。它不改变
 ## 更多文档
 
 - [`light/README.md`](light/README.md)：可独立复制使用的 Light 工具、隐藏 key 输入、隐私与预算
+- [`light/IMAGE_GENERATION.md`](light/IMAGE_GENERATION.md)：独立 Images CLI、PNG 原样保留、成本/未知结果边界
 - [`docs/light-mode.md`](docs/light-mode.md)：独立打包/测试、与原队列隔离、ACP 后续边界
 - [`acp_bridge/README.md`](acp_bridge/README.md)：独立 ACP-to-MCP、取消/unknown/依赖许可与边界
 

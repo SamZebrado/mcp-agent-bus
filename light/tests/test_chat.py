@@ -25,16 +25,16 @@ class ChatTests(unittest.TestCase):
     def test_temporary_hidden_key_does_not_persist_or_print(self):
         output = io.StringIO()
         synthetic = "fixed-fake-input-key"
-        with patch.dict(os.environ, {"DUAL_LANE_API_KEY":"old-fake", "DUAL_LANE_ENABLE_API":"0"}), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=["OPENAI", "/quit"]), patch.object(chat.getpass, "getpass", return_value=synthetic) as getter, patch.object(chat, "call_api") as send, contextlib.redirect_stdout(output):
+        with patch.dict(os.environ, {"DUAL_LANE_API_KEY":"old-fake", "DUAL_LANE_ENABLE_API":"0"}), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=["/quit"]), patch.object(chat.getpass, "getpass", side_effect=["OPENAI", synthetic]) as getter, patch.object(chat, "call_api") as send, contextlib.redirect_stdout(output):
             chat.main(["--ask-key"])
             self.assertEqual(os.environ["DUAL_LANE_API_KEY"], "old-fake")
             self.assertEqual(os.environ["DUAL_LANE_ENABLE_API"], "0")
-        getter.assert_called_once()
+        self.assertEqual(getter.call_count, 2)
         send.assert_not_called()
         self.assertNotIn(synthetic, output.getvalue())
 
     def test_temporary_key_cleanup_on_keyboard_interrupt(self):
-        with patch.dict(os.environ, {}, clear=True), patch("builtins.input", return_value="OPENAI"), patch.object(chat.getpass, "getpass", return_value="fixed-fake-key"), contextlib.redirect_stdout(io.StringIO()):
+        with patch.dict(os.environ, {}, clear=True), patch("builtins.input", return_value="OPENAI"), patch.object(chat.getpass, "getpass", side_effect=["OPENAI", "fixed-fake-key"]), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(KeyboardInterrupt):
                 with chat._prompted_credentials():
                     self.assertEqual(os.environ["DUAL_LANE_ENABLE_API"], "1")
@@ -47,7 +47,7 @@ class ChatTests(unittest.TestCase):
             warnings.warn("Synthetic no-TTY", getpass.GetPassWarning)
             raise AssertionError("Echo fallback must not execute")
         with patch("builtins.input", return_value="OPENAI"), patch.object(chat.getpass, "getpass", side_effect=warning), contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaisesRegex(APIBridgeError, "Hidden key"):
+            with self.assertRaisesRegex(APIBridgeError, "Hidden input"):
                 with chat._prompted_credentials():
                     self.fail("Must not enable")
 

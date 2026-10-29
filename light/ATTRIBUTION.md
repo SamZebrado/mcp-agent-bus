@@ -52,6 +52,19 @@ terms or assign a license to external reference projects.
   endorsement, account/model access, promotional-credit eligibility, or verified
   live billing behavior.
 
+## Separate image entry
+
+The `image_generate.py` implementation and synthetic PNG tests are new project
+code, not copied from a third-party image SDK or another bridge repository.
+Request parameters, pricing review and deprecation guards reference
+[official OpenAI Images documentation](https://developers.openai.com/api/docs/guides/image-generation)
+and [deprecations](https://developers.openai.com/api/docs/deprecations), checked
+2026-10-29. Structural PNG checks reference the
+[W3C PNG specification](https://www.w3.org/TR/png-3/#5ChunkOrdering); no PNG library
+source is copied. Ancillary metadata and provenance are retained unchanged, not
+verified or stripped. Python standard-library `getpass` handles hidden input;
+no terminal-input implementation is vendored.
+
 ## Dependency boundary
 
 The light package uses Python's standard library and adds **no third-party

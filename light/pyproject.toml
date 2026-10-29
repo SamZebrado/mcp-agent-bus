@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-agent-bus-light"
 version = "0.1.0.dev1"
-description = "Standalone opt-in text-only Responses API MCP bridge"
+description = "Standalone opt-in API bridge with a separate image preview/generation CLI"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 mcp-agent-bus-light = "mcp_agent_bus_light.cli:main"
+mcp-agent-bus-image = "mcp_agent_bus_light.image_generate:main"
 
 [tool.setuptools]
 license-files = ["LICENSE", "ATTRIBUTION.md"]

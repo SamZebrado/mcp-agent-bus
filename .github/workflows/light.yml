@@ -31,3 +31,4 @@ jobs:
         run: |
           python -m mcp_agent_bus_light --help
           python -m mcp_agent_bus_light capabilities
+          python -m mcp_agent_bus_light.image_generate --help

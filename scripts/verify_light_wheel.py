@@ -30,6 +30,7 @@ EXPECTED_SCRIPTS = {
     "mcp-agent-bus": "mcp_agent_bus.cli:main",
     "mcp-agent-bus-dashboard": "mcp_agent_bus.dashboard:main",
     "mcp-agent-bus-light": "mcp_agent_bus_light.cli:main",
+    "mcp-agent-bus-image": "mcp_agent_bus_light.image_generate:main",
 }
 GUARD = r'''
 import os
@@ -75,7 +76,7 @@ def run(evidence: Path, standalone=False):
     if os.name == "nt":
         env["SystemRoot"] = os.environ.get("SystemRoot", r"C:\Windows")
     source_root = LIGHT_ROOT if standalone else ROOT
-    expected_scripts = ({"mcp-agent-bus-light": EXPECTED_SCRIPTS["mcp-agent-bus-light"]}
+    expected_scripts = ({name: EXPECTED_SCRIPTS[name] for name in ("mcp-agent-bus-light", "mcp-agent-bus-image")}
                         if standalone else EXPECTED_SCRIPTS)
     distribution = "mcp-agent-bus-light" if standalone else "mcp-agent-bus"
     report = {"status": "running", "python": sys.version, "temporary_work": str(work),
@@ -186,6 +187,13 @@ def run(evidence: Path, standalone=False):
             command("legacy-module-help", [str(python), "-m", "mcp_agent_bus", "--help"], environment=guarded_env)
         command("light-module-help", [str(python), "-m", "mcp_agent_bus_light", "--help"], environment=guarded_env)
         light = bin_dir / ("mcp-agent-bus-light.exe" if os.name == "nt" else "mcp-agent-bus-light")
+        image = bin_dir / ("mcp-agent-bus-image.exe" if os.name == "nt" else "mcp-agent-bus-image")
+        preview = command("image-preview-no-side-effects", [str(image), "--budget-usd", "0.02"],
+                          environment=guarded_env, stdin="Synthetic red square.\n")
+        assert "PREVIEW ONLY" in preview.stdout and "gpt-image-2.5-flare" in preview.stdout
+        assert "UNAVAILABLE; live disabled" in preview.stdout
+        command("image-module-help", [str(python), "-m", "mcp_agent_bus_light.image_generate", "--help"],
+                environment=guarded_env)
         capability = command("light-capabilities", [str(light), "capabilities"], environment=guarded_env)
         report["capabilities"] = json.loads(capability.stdout)
         assert report["capabilities"]["default_backend"] == "responses"

@@ -53,3 +53,15 @@ Light's `harness_acp` code remains a fail-closed unavailable backend plus in-mem
 contract tests; it is not a real Harness integration. See the standalone
 guide and [`ATTRIBUTION.md`](../light/ATTRIBUTION.md) for source provenance and
 research references.
+
+## Separate image CLI
+
+`mcp-agent-bus-image` (or `python -m mcp_agent_bus_light.image_generate`
+from the copied folder) provides a separate human-operated image entry. It is
+not an MCP tool and never acquires bus leases or invokes an agent loop. Read
+[the image guide](../light/IMAGE_GENERATION.md) before use: default preview only,
+new models live-disabled pending verified estimation, limited Mini expiry,
+per-attempt estimate rather than a provider/cumulative cap, directory-scoped
+UNKNOWN reservations, and unchanged PNG metadata/provenance. No real image
+request is part of the offline validation. Root and standalone wheel probes
+verify this entry imports, shows help and previews without network/files/key reads.

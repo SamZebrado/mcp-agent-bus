@@ -12,20 +12,42 @@ from .api import APIBridgeError, MODELS, call_api
 from .policy import SessionBudget, money, prepare_request
 
 
+def _hidden_input(prompt):
+    """Never use input()/readline history or permit getpass echo fallback.
+
+    On POSIX, getpass restores tty settings with TCSAFLUSH, discarding queued
+    paste input. Windows getpass does not drain typeahead, so drain the console
+    queue in finally. This cannot erase already echoed text or input pasted
+    after control has returned to the parent shell.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass(prompt)
+    except getpass.GetPassWarning:
+        raise APIBridgeError("Hidden input unavailable; refusing echo fallback.") from None
+    except (OSError, UnicodeError):
+        raise APIBridgeError("Hidden input failed; nothing sent.") from None
+    finally:
+        if os.name == "nt":
+            try:
+                import msvcrt
+                # Current queued console characters only, never a history file.
+                while msvcrt.kbhit():
+                    msvcrt.getwch()
+            except (ImportError, OSError):
+                raise APIBridgeError("Console input cleanup failed; nothing sent.") from None
+
+
 @contextmanager
 def _prompted_credentials():
     """Local non-echo input, process lifetime only; never changes host credentials."""
     print("Provider: OpenAI only; destination https://api.openai.com/v1/responses")
     print("Key input is hidden and not saved by this application. Process memory is not zeroized.")
     print("Approved text goes to OpenAI; store:false is not zero retention. Host/terminal may retain text.")
-    if input("Type OPENAI to select this provider and enter a temporary key: ") != "OPENAI":
+    if _hidden_input("Type OPENAI (hidden; NOT your key) to select this provider: ") != "OPENAI":
         raise APIBridgeError("Provider selection canceled; nothing sent.")
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", getpass.GetPassWarning)
-            key = getpass.getpass("OpenAI API key (hidden; this process only): ")
-    except getpass.GetPassWarning:
-        raise APIBridgeError("Hidden key input unavailable; refusing echo fallback.") from None
+    key = _hidden_input("OpenAI API key (hidden; this process only): ")
     if not key or key != key.strip() or any(ord(c) < 33 or ord(c) > 126 for c in key):
         raise APIBridgeError("Invalid key input; nothing sent.")
     names = ("DUAL_LANE_API_KEY", "DUAL_LANE_ENABLE_API")

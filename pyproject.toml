@@ -10,6 +10,7 @@ dependencies = []
 mcp-agent-bus = "mcp_agent_bus.cli:main"
 mcp-agent-bus-dashboard = "mcp_agent_bus.dashboard:main"
 mcp-agent-bus-light = "mcp_agent_bus_light.cli:main"
+mcp-agent-bus-image = "mcp_agent_bus_light.image_generate:main"
 
 [tool.setuptools]
 license-files = ["LICENSE", "light/ATTRIBUTION.md"]

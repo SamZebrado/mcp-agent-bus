@@ -2,3 +2,5 @@ include LICENSE README.md ATTRIBUTION.md
 recursive-include examples *.jsonl
 recursive-include scripts *.py
 recursive-include tests *.py
+
+include IMAGE_GENERATION.md

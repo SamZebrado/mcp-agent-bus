@@ -85,12 +85,19 @@ does not create, retrieve or persist credentials for you.
 
 For a separate local terminal session, `python -m mcp_agent_bus_light chat
 --provider openai --ask-key` offers provider confirmation and **hidden key input**.
+The provider confirmation also uses hidden input: type `OPENAI` there, not a key.
 Only official OpenAI is currently available: arbitrary compatible-provider URLs
 are deliberately rejected so a key cannot silently follow a changed endpoint.
 The key is scoped to this process and removed/restored on session exit; it is not
 written to shell history, repository files or Codex configuration by the app.
 Python memory is not securely zeroized, and a compromised local machine can
-observe secrets. If non-echo input is unavailable, the command refuses rather
+observe secrets. Both setup prompts refuse visible-input fallback. Ctrl+C/EOF
+cancel with fixed text; queued paste input is discarded by POSIX getpass or the
+Windows console-drain path. This does not erase text already echoed by an older
+version, shell history, terminal scrollback/recordings, or input arriving after
+the program has exited. Paste only after the requested prompt appears, one field
+at a time. Ordinary chat text and outgoing previews are intentionally displayed:
+never paste credentials into `you>` or a shell command prompt. If non-echo input is unavailable, the command refuses rather
 than falling back to visible typing. This input flow still requires a fresh
 explicit confirmation of every outgoing text/model/cap, and does not enable MCP
 credentials in other processes. Do not enter a real key for offline tests.
@@ -183,3 +190,10 @@ The full repository additionally includes wheel/isolation and real Codex CLI
 MCP-discovery tests. These tests do not validate a billed model response, grant
 deduction, a signed-in subscription session, Desktop approvals or native OS UI.
 Do not run synthetic-fixture tests against a production API endpoint.
+
+## Separate image entry (candidate)
+
+The MCP/chat tools remain text-only. A separate human-operated Images API CLI
+is described in [IMAGE_GENERATION.md](IMAGE_GENERATION.md). It defaults to an
+offline preview, never uploads input images, and is not an autonomous agent tool.
+GPT Image 2.5 choices are preview-only until their local estimator is verified.
