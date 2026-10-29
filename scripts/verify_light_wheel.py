@@ -139,6 +139,14 @@ def run(evidence: Path, standalone=False):
             metadata = z.read(metadata_path).decode()
             assert "Requires-Python: >=3.10" in metadata, metadata
             assert "Requires-Dist:" not in metadata, "Runtime dependency added"
+            notice_sources = {"LICENSE": stage / "LICENSE", "ATTRIBUTION.md":
+                              stage / "ATTRIBUTION.md" if standalone else stage / "light" / "ATTRIBUTION.md"}
+            notices = {}
+            for filename, source in notice_sources.items():
+                matches = [name for name in members if name.endswith("/" + filename) and ".dist-info/" in name]
+                assert len(matches) == 1, "Missing or ambiguous wheel notice: " + filename
+                assert z.read(matches[0]) == source.read_bytes(), "Notice changed during packaging: " + filename
+                notices[filename] = {"wheel_path": matches[0], "sha256": sha(source)}
             modules = [x[:-3].replace("/", ".") for x in members
                        if x.endswith(".py") and (x.startswith("mcp_agent_bus/") or x.startswith("mcp_agent_bus_light/"))
                        and not x.endswith("/__main__.py")]
@@ -146,6 +154,7 @@ def run(evidence: Path, standalone=False):
         report.update(wheel=wheel.name, wheel_sha256=sha(wheel), wheel_bytes=wheel.stat().st_size,
                       wheel_members=members, console_scripts=actual_scripts,
                       imported_modules=modules, runtime_dependencies=[], packaged_source_sha256=source_hashes,
+                      included_notices=notices,
                       pyproject_sha256=sha(stage / "pyproject.toml"))
         target_venv = work / "venv"
         # ensurepip uses only the Python distribution's bundled wheel, not PyPI.
