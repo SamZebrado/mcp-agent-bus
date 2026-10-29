@@ -6,6 +6,14 @@ MCP Agent Task Bus does not run agents or manage models and terminals. It provid
 
 ## Current role
 
+**Optional standalone component: [Agent Bus Light](light/README.md).** Copy only
+the `light/` folder for an opt-in text Responses API second-opinion tool, with
+offline preview, hidden process-only key input and explicit privacy/cost checks.
+It does not start the bus, use task leases, or alter existing host authentication.
+Harness/ACP is not implemented: only a fail-closed backend and mock contract are
+present. See [integration/testing notes](docs/light-mode.md) and
+[source attribution](light/ATTRIBUTION.md).
+
 Codex now provides native multi-agent and cross-task/thread coordination. **For workflows that live entirely inside Codex, prefer the native Codex capabilities** rather than adding this project for equivalent orchestration.
 
 `mcp-agent-bus` now focuses on a **provider-neutral, host-neutral local coordination layer** for independent MCP hosts/runtimes that need shared task state. It provides a common stdio tool contract, persistent SQLite state, idempotent sends, leased ownership, explicit result review, and auditable events without depending on one product's thread/session lifecycle.
