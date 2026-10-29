@@ -1,5 +1,19 @@
 # TODO
 
+## Optional standalone tools
+
+- [x] Self-contained `light/` folder and separate console entry, using one source tree
+- [x] Offline privacy/approval/budget/unknown-outcome tests and isolated wheel checks
+- [x] Non-echo, process-only key input for separately approved terminal chat
+- [ ] Verify actual host per-call approval UI before any live MCP use
+- [ ] Explicitly authorized tiny live API test and independent Platform usage reconciliation
+- [ ] Standalone ACP-to-MCP adapter: separate folder/package, no task-queue coupling,
+      no agent loop, no implicit shell/filesystem permission, explicit attribution
+- [ ] Real Harness/ACP wire/version/cancel/budget verification; current mock is not support
+
+No automatic live test, credentials setup, paid API usage, or plugin/package
+publication follows from these TODOs.
+
 ## Correctness / Reliability
 
 - [x] Add multi-process transaction coverage for same-task claims and same-key sends

@@ -1,4 +1,15 @@
-## Unreleased
+## Unreleased — optional standalone Light
+
+- Add self-contained `light/`, separate packaging/entry point, and text-only Responses MCP tools.
+- Add offline preview, exact-request approval binding, process budget reservations, and unknown-result quarantine.
+- Add non-echo temporary OpenAI key input for separately operated terminal chat; no credential persistence.
+- Keep original bus source/schema/tests/defaults unchanged; no paid request is routed through task leases.
+- Add offline mock, isolated folder/wheel and actual Codex CLI fixture validation scripts.
+- Harness ACP remains unavailable; in-memory contract tests are not a production adapter.
+- No package release, real API test, or promotional-credit eligibility claim.
+
+
+## Unreleased — stable bus
 
 - Added provider-neutral `bus_sync` as the preferred compact coordination tool; `codex_bus_sync` remains a compatibility alias.
 - Added a deterministic two-host MCP stdio/JSON-RPC E2E test covering send, idempotent retry, claim, progress, finish, result, planner review, and doctor.

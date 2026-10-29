@@ -6,6 +6,11 @@ MCP Agent Task Bus 不运行 agent，也不管理模型或终端。它只提供�
 
 ## 当前定位
 
+**新增可选独立组件：[Agent Bus Light](light/README.md)。** 只复制 `light/`
+子目录即可使用文本 Responses API 第二意见工具（默认离线、无运行时依赖）。
+不启动完整 bus、不走任务租约、不改原登录；与下面的稳定任务总线是独立入口。
+Harness/ACP 目前仅有 mock 契约测试，不是已实现后端。先阅读其授权、隐私与预算边界。
+
 Codex 当前已经提供原生的多 agent 与跨 task/thread 协作能力。**如果工作完全发生在 Codex 内部，应优先使用 Codex 原生能力**，无需为了同类编排再额外引入本项目。
 
 `mcp-agent-bus` 当前保留的价值是一个 **provider-neutral、host-neutral 的本地协调层**：当多个彼此独立的 MCP host/runtime 需要共享任务状态时，它提供统一的 stdio 工具契约、持久 SQLite 状态、幂等发送、lease ownership、显式结果验收和可审计事件记录。这些状态不依赖某个特定 AI 产品自己的 thread/session 生命周期。
@@ -155,6 +160,9 @@ new → claimed → running → done / failed / blocked / rejected / cancelled /
 Planner 验收是独立 metadata：`NULL → accepted | rejected`。它不改变 worker 的 `done`，也不等同于 worker 执行结果中的 `rejected`。首次相同复审幂等，验收结果不可静默翻转。
 
 ## 更多文档
+
+- [`light/README.md`](light/README.md)：可独立复制使用的 Light 工具、隐藏 key 输入、隐私与预算
+- [`docs/light-mode.md`](docs/light-mode.md)：独立打包/测试、与原队列隔离、ACP 后续边界
 
 - [`docs/operations.md`](docs/operations.md)：doctor、幂等、取消、验收、事件一致性与故障动作
 - [`docs/three_agent_demo.md`](docs/three_agent_demo.md)：planner + tests/docs workers 示例

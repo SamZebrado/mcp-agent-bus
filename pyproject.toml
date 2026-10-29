@@ -1,6 +1,6 @@
 [project]
 name = "mcp-agent-bus"
-version = "0.2.0"
+version = "0.2.1.dev1"
 description = "Local MCP message bus for independent agents"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -9,6 +9,16 @@ dependencies = []
 [project.scripts]
 mcp-agent-bus = "mcp_agent_bus.cli:main"
 mcp-agent-bus-dashboard = "mcp_agent_bus.dashboard:main"
+mcp-agent-bus-light = "mcp_agent_bus_light.cli:main"
 
 [tool.setuptools]
-packages = ["mcp_agent_bus"]
+license-files = ["LICENSE", "light/ATTRIBUTION.md"]
+
+[tool.setuptools.package-dir]
+mcp_agent_bus_light = "light/mcp_agent_bus_light"
+
+[tool.setuptools.packages.find]
+where = [".", "light"]
+namespaces = false
+include = ["mcp_agent_bus", "mcp_agent_bus.*", "mcp_agent_bus_light", "mcp_agent_bus_light.*"]
+exclude = ["tests*", "scripts*"]

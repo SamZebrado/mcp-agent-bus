@@ -1,0 +1,33 @@
+name: agent-bus-light-offline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Copy only standalone folder
+        run: python -c "import shutil; shutil.copytree('light', '../isolated-light')"
+      - name: Offline standalone tests
+        working-directory: ../isolated-light
+        run: python scripts/verify_offline.py
+      - name: Offline entry points
+        working-directory: ../isolated-light
+        run: |
+          python -m mcp_agent_bus_light --help
+          python -m mcp_agent_bus_light capabilities

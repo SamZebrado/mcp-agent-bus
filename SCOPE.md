@@ -2,6 +2,13 @@
 
 This project is a small local MCP task bus for handoff, status synchronization, result delivery, planner review, and auditability between existing compatible agent conversations or tools.
 
+The sections below describe the unchanged `mcp_agent_bus` core. The repository
+also contains an independently usable, opt-in [`light/`](light/README.md) text
+Responses API client/MCP tool. It does not use the bus database, leases, task
+schema, audit mirror or dashboard. It is not an agent runtime. Its explicit
+consent, privacy and cost boundaries are documented separately; installing the
+repository does not enable API requests or credentials.
+
 ## What This Project Does
 
 - Stores task state and authoritative append-only events in local SQLite WAL

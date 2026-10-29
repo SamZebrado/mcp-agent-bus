@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-agent-bus-light"
+version = "0.1.0.dev1"
+description = "Standalone opt-in text-only Responses API MCP bridge"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+mcp-agent-bus-light = "mcp_agent_bus_light.cli:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "ATTRIBUTION.md"]
+
+[tool.setuptools.packages.find]
+include = ["mcp_agent_bus_light", "mcp_agent_bus_light.*"]
+namespaces = false
+exclude = ["tests*", "scripts*", "examples*"]
