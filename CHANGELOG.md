@@ -1,3 +1,12 @@
+## Unreleased — standalone ACP-to-MCP
+
+- Add an independently copyable ACP v1 facade using the official pinned Python SDK, not an agent loop.
+- Require static operator profiles plus per-request approval; deny client permissions, filesystem and terminal callbacks.
+- Bound wire data and output, sanitize diagnostics, isolate child environment, and preserve unknown quarantine across restarts.
+- Add explicit cancellation with original-prompt confirmation and cancel-before-start/EOF regression coverage.
+- Real Codex CLI checks use fake ACP processes only; no real Harness, model, API credentials or paid usage is claimed.
+- Root task bus and Light runtime remain unchanged.
+
 ## Unreleased — optional standalone Light
 
 - Add self-contained `light/`, separate packaging/entry point, and text-only Responses MCP tools.

@@ -10,9 +10,15 @@ MCP Agent Task Bus does not run agents or manage models and terminals. It provid
 the `light/` folder for an opt-in text Responses API second-opinion tool, with
 offline preview, hidden process-only key input and explicit privacy/cost checks.
 It does not start the bus, use task leases, or alter existing host authentication.
-Harness/ACP is not implemented: only a fail-closed backend and mock contract are
+Light’s Harness/ACP backend is not implemented: only a fail-closed backend and mock contract are
 present. See [integration/testing notes](docs/light-mode.md) and
 [source attribution](light/ATTRIBUTION.md).
+
+**Separate protocol utility: [ACP-to-MCP](acp_bridge/README.md).** Copy only
+`acp_bridge/` to expose an operator-configured ACP v1 agent as MCP tools. It reuses
+the official SDK, is disabled by default, and has no bus/Light/Harness dependency
+or agent loop. Validation uses fake ACP agents; denied client permissions are
+not an OS sandbox or a provider-enforced spending cap.
 
 Codex now provides native multi-agent and cross-task/thread coordination. **For workflows that live entirely inside Codex, prefer the native Codex capabilities** rather than adding this project for equivalent orchestration.
 

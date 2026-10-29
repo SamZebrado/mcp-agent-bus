@@ -7,9 +7,10 @@
 - [x] Non-echo, process-only key input for separately approved terminal chat
 - [ ] Verify actual host per-call approval UI before any live MCP use
 - [ ] Explicitly authorized tiny live API test and independent Platform usage reconciliation
-- [ ] Standalone ACP-to-MCP adapter: separate folder/package, no task-queue coupling,
+- [x] Standalone ACP-to-MCP adapter: separate folder/package, no task-queue coupling,
       no agent loop, no implicit shell/filesystem permission, explicit attribution
 - [ ] Real Harness/ACP wire/version/cancel/budget verification; current mock is not support
+- [ ] Real-agent isolation/credential/provider-budget validation before live ACP execution
 
 No automatic live test, credentials setup, paid API usage, or plugin/package
 publication follows from these TODOs.

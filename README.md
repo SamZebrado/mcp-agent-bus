@@ -9,7 +9,12 @@ MCP Agent Task Bus 不运行 agent，也不管理模型或终端。它只提供�
 **新增可选独立组件：[Agent Bus Light](light/README.md)。** 只复制 `light/`
 子目录即可使用文本 Responses API 第二意见工具（默认离线、无运行时依赖）。
 不启动完整 bus、不走任务租约、不改原登录；与下面的稳定任务总线是独立入口。
-Harness/ACP 目前仅有 mock 契约测试，不是已实现后端。先阅读其授权、隐私与预算边界。
+Light 的 Harness/ACP 后端目前仅有 mock 契约测试，不是已实现后端。先阅读其授权、隐私与预算边界。
+
+**独立协议工具：[ACP-to-MCP](acp_bridge/README.md)。** 可单独复制 `acp_bridge/`
+目录，把操作者预配置的 ACP v1 agent 暴露为 MCP 工具；默认不启外部进程，
+复用官方 SDK，不绑定 Harness、不重造 agent loop。当前实测对象为 fake ACP；
+权限默认拒绝不等于 OS 沙箱，也不能替 provider 保证费用上限。
 
 Codex 当前已经提供原生的多 agent 与跨 task/thread 协作能力。**如果工作完全发生在 Codex 内部，应优先使用 Codex 原生能力**，无需为了同类编排再额外引入本项目。
 
@@ -163,6 +168,7 @@ Planner 验收是独立 metadata：`NULL → accepted | rejected`。它不改变
 
 - [`light/README.md`](light/README.md)：可独立复制使用的 Light 工具、隐藏 key 输入、隐私与预算
 - [`docs/light-mode.md`](docs/light-mode.md)：独立打包/测试、与原队列隔离、ACP 后续边界
+- [`acp_bridge/README.md`](acp_bridge/README.md)：独立 ACP-to-MCP、取消/unknown/依赖许可与边界
 
 - [`docs/operations.md`](docs/operations.md)：doctor、幂等、取消、验收、事件一致性与故障动作
 - [`docs/three_agent_demo.md`](docs/three_agent_demo.md)：planner + tests/docs workers 示例

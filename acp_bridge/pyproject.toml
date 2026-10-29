@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-agent-bus-acp"
+version = "0.1.0.dev1"
+description = "Opt-in standalone MCP facade for an operator-configured ACP v1 agent"
+readme = "README.md"
+requires-python = ">=3.10,<3.15"
+license = {text = "MIT"}
+dependencies = ["agent-client-protocol==0.12.1", "pydantic==2.13.4"]
+
+[project.scripts]
+mcp-agent-bus-acp = "agent_bus_acp.cli:main"
+
+[tool.setuptools]
+license-files = ["LICENSE", "ATTRIBUTION.md"]
+
+[tool.setuptools.packages.find]
+include = ["agent_bus_acp", "agent_bus_acp.*"]
+namespaces = false

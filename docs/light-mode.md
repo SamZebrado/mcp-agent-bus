@@ -47,8 +47,9 @@ inspect the checks for the exact commit before claiming OS results.
 
 The light tool deliberately stops at one explicitly approved text request (or a
 human-operated separate chat). Use an existing agent for shell/tools/multi-step
-work. A future ACP-to-MCP utility should be independently installable, not tied
-to Harness or the queue. Current `harness_acp` code is a fail-closed unavailable
-backend plus in-memory contract tests; it is not that utility. See the standalone
+work. The separate [`acp_bridge/`](../acp_bridge/README.md) now provides a restricted
+protocol utility with local fake ACP validation, not tied to Harness or the queue.
+Light's `harness_acp` code remains a fail-closed unavailable backend plus in-memory
+contract tests; it is not a real Harness integration. See the standalone
 guide and [`ATTRIBUTION.md`](../light/ATTRIBUTION.md) for source provenance and
 research references.

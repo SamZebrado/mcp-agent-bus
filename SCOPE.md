@@ -7,7 +7,10 @@ also contains an independently usable, opt-in [`light/`](light/README.md) text
 Responses API client/MCP tool. It does not use the bus database, leases, task
 schema, audit mirror or dashboard. It is not an agent runtime. Its explicit
 consent, privacy and cost boundaries are documented separately; installing the
-repository does not enable API requests or credentials.
+repository does not enable API requests or credentials. A second independent
+[`acp_bridge/`](acp_bridge/README.md) package provides an opt-in ACP protocol
+facade, not an agent runtime; it is not installed by the root package. Its child
+process permissions, privacy, cleanup and cost boundaries are documented there.
 
 ## What This Project Does
 
