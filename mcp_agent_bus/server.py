@@ -183,6 +183,8 @@ class McpServer:
         self.bus.close()
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(request, dict):
+            return self.error(None, -32600, "invalid request: expected an object")
         method = request.get("method")
         req_id = request.get("id")
         try:
@@ -275,7 +277,12 @@ def main() -> int:
         for line in sys.stdin:
             if not line.strip():
                 continue
-            response = server.handle(json.loads(line))
+            try:
+                request = json.loads(line)
+            except json.JSONDecodeError:
+                response = server.error(None, -32700, "parse error")
+            else:
+                response = server.handle(request)
             if response is not None:
                 sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
                 sys.stdout.flush()

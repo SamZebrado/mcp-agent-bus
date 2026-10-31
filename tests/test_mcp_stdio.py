@@ -9,6 +9,28 @@ import unittest
 
 
 class McpStdioTests(unittest.TestCase):
+    def test_malformed_frames_do_not_terminate_server(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env["MCP_AGENT_BUS_DATA_DIR"] = tmp
+            frames = ['{bad', 'null', '[]', '42', '"text"']
+            frames.append(json.dumps({"jsonrpc": "2.0", "id": 7, "method": "tools/list"}))
+            result = subprocess.run(
+                [sys.executable, "-m", "mcp_agent_bus.server"],
+                input="\n".join(frames) + "\n", capture_output=True,
+                text=True, env=env, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            replies = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual(len(replies), len(frames))
+            self.assertEqual(replies[0]["error"]["code"], -32700)
+            for reply in replies[1:-1]:
+                self.assertEqual(reply["error"]["code"], -32600)
+                self.assertIsNone(reply["id"])
+            self.assertEqual(replies[-1]["id"], 7)
+            self.assertIn("tools", replies[-1]["result"])
+            self.assertEqual(result.stderr, "")
+
     def test_tools_list_and_call(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
