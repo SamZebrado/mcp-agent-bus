@@ -32,6 +32,8 @@ mcp-agent-bus --data-dir /absolute/shared/data doctor \
 
 The CLI inspection path does not create a missing directory/database and does not run schema migration. Its temporary directory write probe is created and immediately removed; its SQLite writeability probe acquires and rolls back a bounded immediate transaction without changing rows.
 
+Pass `--data-dir` as a literal filesystem path, quoted as needed by your shell, not as a percent-encoded URI. Doctor and dashboard encode the SQLite URI internally so filename characters such as `#` and `%` retain their literal meaning.
+
 The MCP `doctor` tool inspects the already-running server's initialized store. Use the CLI when the server itself cannot start or the configured path may be wrong.
 
 Interpretation:

@@ -53,7 +53,7 @@ class DashboardStore:
     def _connect(self) -> sqlite3.Connection | None:
         if not self.db_path.exists():
             return None
-        uri = f"file:{self.db_path}?mode=ro"
+        uri = f"{self.db_path.as_uri()}?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=5)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA query_only=ON")

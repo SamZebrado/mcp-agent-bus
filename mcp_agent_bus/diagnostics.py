@@ -111,7 +111,7 @@ def run_doctor(
 
     conn: sqlite3.Connection | None = None
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True, timeout=5)
         conn.row_factory = sqlite3.Row
         integrity_rows = conn.execute("PRAGMA integrity_check").fetchall()
         integrity = [str(row[0]) for row in integrity_rows]
@@ -230,7 +230,7 @@ def run_doctor(
             conn.close()
 
     try:
-        rw = sqlite3.connect(f"file:{db_path}?mode=rw", uri=True, timeout=5, isolation_level=None)
+        rw = sqlite3.connect(f"{db_path.as_uri()}?mode=rw", uri=True, timeout=5, isolation_level=None)
         rw.execute("BEGIN IMMEDIATE")
         rw.execute("ROLLBACK")
         rw.close()
