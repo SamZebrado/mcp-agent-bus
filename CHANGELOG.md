@@ -20,6 +20,8 @@
 
 ## Unreleased — stable bus
 
+- Encode SQLite file URI paths in doctor and dashboard so `#`, `%`, and other filename characters cannot select the wrong database or drop the non-creating/read-only open mode.
+- Add special-path regressions for exact-store selection, no stray database creation, and dashboard read-only access.
 - Added provider-neutral `bus_sync` as the preferred compact coordination tool; `codex_bus_sync` remains a compatibility alias.
 - Added a deterministic two-host MCP stdio/JSON-RPC E2E test covering send, idempotent retry, claim, progress, finish, result, planner review, and doctor.
 - Hardened concurrent first-start SQLite WAL initialization so independent MCP hosts can start against the same fresh data directory without a transient lock failure.
