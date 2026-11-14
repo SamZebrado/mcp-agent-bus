@@ -31,6 +31,30 @@ class McpStdioTests(unittest.TestCase):
             self.assertIn("tools", replies[-1]["result"])
             self.assertEqual(result.stderr, "")
 
+    def test_ping_preserves_request_id_and_keeps_transport_alive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env["MCP_AGENT_BUS_DATA_DIR"] = tmp
+            frames = [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                {"jsonrpc": "2.0", "id": "liveness", "method": "ping"},
+                {"jsonrpc": "2.0", "id": 0, "method": "ping"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+            ]
+            result = subprocess.run(
+                [sys.executable, "-m", "mcp_agent_bus.server"],
+                input="\n".join(map(json.dumps, frames)) + "\n",
+                capture_output=True, text=True, env=env, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            replies = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual([reply["id"] for reply in replies], [1, "liveness", 0, 2])
+            self.assertEqual(replies[1], {"jsonrpc": "2.0", "id": "liveness", "result": {}})
+            self.assertEqual(replies[2], {"jsonrpc": "2.0", "id": 0, "result": {}})
+            self.assertIn("tools", replies[3]["result"])
+
     def test_tools_list_and_call(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
