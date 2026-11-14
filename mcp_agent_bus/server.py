@@ -202,6 +202,10 @@ class McpServer:
                 return {"jsonrpc": "2.0", "id": req_id, "result": result}
             if method == "notifications/initialized":
                 return None
+            if method == "ping":
+                if "id" not in request:
+                    return None
+                return {"jsonrpc": "2.0", "id": req_id, "result": {}}
             if method == "tools/list":
                 tools = [
                     {
