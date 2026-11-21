@@ -278,18 +278,20 @@ def tool_description(name: str) -> str:
 def main() -> int:
     server = McpServer()
     try:
-        for line in sys.stdin:
+        # MCP defines UTF-8 frames, independent of the locale or PYTHONIOENCODING.
+        stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
+        for line in stdin:
             if not line.strip():
                 continue
             try:
-                request = json.loads(line)
-            except json.JSONDecodeError:
+                request = json.loads(line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 response = server.error(None, -32700, "parse error")
             else:
                 response = server.handle(request)
             if response is not None:
-                sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
-                sys.stdout.flush()
+                stdout.write((json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8"))
+                stdout.flush()
     finally:
         server.close()
     return 0

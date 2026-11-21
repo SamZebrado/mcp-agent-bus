@@ -55,6 +55,35 @@ class McpStdioTests(unittest.TestCase):
             self.assertEqual(replies[2], {"jsonrpc": "2.0", "id": 0, "result": {}})
             self.assertIn("tools", replies[3]["result"])
 
+    def test_utf8_round_trip_ignores_local_stdio_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env["MCP_AGENT_BUS_DATA_DIR"] = tmp
+            # Simulate a host running Python with a non-UTF-8 pipe encoding.
+            env["PYTHONIOENCODING"] = "ascii"
+            frame = {
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "register_agent",
+                    "arguments": {"agent_name": "审阅者", "role": "確認係"},
+                },
+            }
+            ping = {"jsonrpc": "2.0", "id": 2, "method": "ping"}
+            result = subprocess.run(
+                [sys.executable, "-m", "mcp_agent_bus.server"],
+                input=b"\n".join((json.dumps(frame, ensure_ascii=False).encode("utf-8"),
+                                   json.dumps(ping).encode("ascii"), b"")),
+                capture_output=True, env=env, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, b"")
+            replies = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual([reply["id"] for reply in replies], [1, 2])
+            payload = json.loads(replies[0]["result"]["content"][0]["text"])
+            self.assertEqual(payload["agent_name"], "审阅者")
+            self.assertEqual(payload["role"], "確認係")
+            self.assertEqual(replies[1]["result"], {})
+
     def test_tools_list_and_call(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ.copy()
