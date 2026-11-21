@@ -37,7 +37,7 @@ worker-docs alias  ┘                 └─ events.jsonl (inspectable audit mi
 - Python standard library only
 - SQLite WAL for local multi-process access
 - Task state and the authoritative `events` table commit together; `events.jsonl` is a post-commit best-effort mirror
-- The MCP transport is currently **stdio only**; HTTP / Streamable HTTP is not implemented
+- The MCP transport is currently **stdio only** (UTF-8, independent of the host locale); HTTP / Streamable HTTP is not implemented
 - The optional localhost dashboard is read-only
 
 This is not an agent runtime, tmux orchestrator, provider framework, or workflow engine.

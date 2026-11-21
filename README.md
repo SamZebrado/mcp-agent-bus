@@ -36,9 +36,9 @@ worker-docs alias  ┘                 └─ events.jsonl（可检查的审计 
 - Python 标准库，无运行时依赖
 - SQLite WAL 支持本地多进程访问
 - `events` 表与任务状态同事务提交；`events.jsonl` 是提交后的 best-effort mirror
-- MCP transport 当前仅支持 **stdio**；HTTP / Streamable HTTP 未实现
+- MCP transport 当前仅支持 **stdio**（固定 UTF-8，不依赖系统区域设置）；HTTP / Streamable HTTP 未实现
 - 空闲的 stdio 调度器支持 MCP 2024-11-05 的 `ping`；长工具调用运行期间不保证响应。
-- stdio 中畸形 JSON / 非对象帧返回解析 / 无效请求错误，并继续处理后续行；这不是全面协议合规声明
+- stdio 中无效 UTF-8 / 畸形 JSON / 非对象帧返回解析 / 无效请求错误，并继续处理后续行；这不是全面协议合规声明
 - Dashboard 只读，默认仅绑定 `127.0.0.1`
 
 这不是 agent runtime、tmux orchestrator、LLM provider framework 或 workflow engine。
